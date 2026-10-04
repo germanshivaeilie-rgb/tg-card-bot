@@ -9,7 +9,7 @@ from aiogram.types import FSInputFile
 from aiogram.filters import Command
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-COOLDOWN_MINUTES = 60
+COOLDOWN_MINUTES = 1
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
