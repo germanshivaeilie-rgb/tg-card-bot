@@ -16,9 +16,11 @@ dp = Dispatcher()
 
 # ==== КАРТОЧКИ ====
 cards = [
-    {"name": "Засохшая лилия",        "rarity": "⚪ Обычная",    "price": 1,     "file": "Засохшая лилия на чёрном фоне (1).png", "chance": 70},
-    {"name": "Секретный трансформер", "rarity": "🔴 Секретная",  "price": 67000, "file": "ChatGPT Image 27 сент. 2026 г., 13_10_10.png", "chance": 5},
-    {"name": "Грустный хлеб",         "rarity": "🟣 Эпическая",  "price": 1000,  "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png", "chance": 25},
+    {"name": "Засохшая лилия",        "rarity": "⚪ Обычная",     "price": 100,   "file": "Засохшая лилия на чёрном фоне (1).png", "chance": 50},
+    {"name": "Про ранг трансформер", "rarity": "🔴 Секретная",   "price": 67000, "file": "ChatGPT Image 27 сент. 2026 г., 13_10_10.png", "chance": 5},
+    {"name": "Грустный хлеб",         "rarity": "🟣 Эпическая",   "price": 1000,  "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png", "chance": 20},
+    {"name": "Новая легендарка",      "rarity": "🟡 Легендарная", "price": 10000, "file": "IMG_20261004_211521_420.jpg", "chance": 10},
+    {"name": "Moggфон",               "rarity": "🔴 Секретная",   "price": 50000, "file": "IMG_20261004_211400_997.jpg", "chance": 15},
 ]
 
 UPGRADE_PRICES = {2: 100, 3: 1000}
