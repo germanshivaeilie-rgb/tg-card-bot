@@ -33,6 +33,7 @@ cards = [
     {"name": "Поедатель чижика",        "rarity": "🔷 Редкая",      "price": 500,   "file": "IMG_20261004_205356_295.jpg"},
     {"name": "Фонк",                    "rarity": "🔷 Редкая",      "price": 400,   "file": "ChatGPT Image 4 окт. 2026 г., 15_45_06.png"},
     {"name": "Грустный хлеб",           "rarity": "🔮 Эпическая",   "price": 1000,  "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png"},
+    {"name": "Ляшки асеки",             "rarity": "🔮 Эпическая",   "price": 800,   "file": "IMG_20261005_143214_562.jpg"},
     {"name": "Тру Адамс",               "rarity": "👑 Легендарная", "price": 5000,  "file": "ChatGPT Image 3 окт. 2026 г., 20_39_20.png"},
     {"name": "Давалка",                 "rarity": "👑 Легендарная", "price": 10000, "file": "IMG_20261004_211521_420.jpg"},
     {"name": "Moggфон",                 "rarity": "♣️ Секретная",   "price": 50000, "file": "IMG_20261004_211400_997.jpg"},
