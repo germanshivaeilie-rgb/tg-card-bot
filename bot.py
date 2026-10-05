@@ -14,13 +14,23 @@ COOLDOWN_MINUTES = 1  # 1 минута
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
-# ==== КАРТОЧКИ ====
+# ==== ШАНСЫ РЕДКОСТЕЙ (в сумме 100) ====
+RARITY_CHANCES = {
+    "⚪ Обычная":     60,
+    "🔷 Редкая":      20,
+    "🔮 Эпическая":   10,
+    "👑 Легендарная": 6,
+    "♣️ Секретная":   4,  # суммарно на все секретные
+}
+
+# ==== КАРТОЧКИ (без "chance" — он теперь у редкости) ====
 cards = [
-    {"name": "Засохшая лилия",        "rarity": "⚪ Обычная",     "price": 100,   "file": "Засохшая лилия на чёрном фоне (1).png", "chance": 50},
-    {"name": "Про ранг трансформер", "rarity": "🔴 Секретная",   "price": 67000, "file": "ChatGPT Image 27 сент. 2026 г., 13_10_10.png", "chance": 5},
-    {"name": "Грустный хлеб",         "rarity": "🟣 Эпическая",   "price": 1000,  "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png", "chance": 20},
-    {"name": "Новая легендарка",      "rarity": "🟡 Легендарная", "price": 10000, "file": "IMG_20261004_211521_420.jpg", "chance": 10},
-    {"name": "Moggфон",               "rarity": "🔴 Секретная",   "price": 50000, "file": "IMG_20261004_211400_997.jpg", "chance": 15},
+    {"name": "Засохшая лилия",        "rarity": "⚪ Обычная",     "price": 100,   "file": "Засохшая лилия на чёрном фоне (1).png"},
+    {"name": "Поедатель чижика",      "rarity": "🔷 Редкая",      "price": 500,   "file": "IMG_20261004_205356_295.jpg"},
+    {"name": "Грустный хлеб",         "rarity": "🔮 Эпическая",   "price": 1000,  "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png"},
+    {"name": "Новая легендарка",      "rarity": "👑 Легендарная", "price": 10000, "file": "IMG_20261004_211521_420.jpg"},
+    {"name": "Секретный трансформер", "rarity": "♣️ Секретная",   "price": 67000, "file": "ChatGPT Image 27 сент. 2026 г., 13_10_10.png"},
+    {"name": "Moggфон",               "rarity": "♣️ Секретная",   "price": 50000, "file": "IMG_20261004_211400_997.jpg"},
 ]
 
 UPGRADE_PRICES = {2: 100, 3: 1000}
@@ -49,14 +59,23 @@ db.commit()
 
 
 def roll_card():
-    total = sum(c["chance"] for c in cards)
+    """Выбирает редкость по шансам, потом случайную карту внутри неё."""
+    # 1. Выбираем редкость
+    total = sum(RARITY_CHANCES.values())
     r = random.uniform(0, total)
     upto = 0
-    for c in cards:
-        upto += c["chance"]
+    chosen_rarity = None
+    for rarity, chance in RARITY_CHANCES.items():
+        upto += chance
         if r <= upto:
-            return c
-    return cards[0]
+            chosen_rarity = rarity
+            break
+
+    # 2. Среди карт этой редкости выбираем случайную
+    pool = [c for c in cards if c["rarity"] == chosen_rarity]
+    if not pool:
+        pool = cards  # на всякий случай
+    return random.choice(pool)
 
 
 def get_user(uid, username=None):
