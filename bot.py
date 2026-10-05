@@ -11,7 +11,7 @@ from aiogram.filters import Command
 from PIL import Image, ImageDraw, ImageFont
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-COOLDOWN_MINUTES = 1
+COOLDOWN_MINUTES = 60
 
 FONT_PATH = "Roboto-Italic-VariableFont_wdth,wght.ttf"
 BG_PATH = "ChatGPT Image 5 окт. 2026 г., 09_26_45.png"
@@ -28,18 +28,17 @@ RARITY_CHANCES = {
 }
 
 cards = [
-    {"name": "Засохшая лилия",         "rarity": "⚪ Обычная",     "price": 100,   "file": "Засохшая лилия на чёрном фоне (1).png"},
+    {"name": "Засохшая лилия",          "rarity": "⚪ Обычная",     "price": 100,   "file": "Засохшая лилия на чёрном фоне (1).png"},
     {"name": "Шоколадный глаз рубрика", "rarity": "⚪ Обычная",     "price": 150,   "file": "IMG_20261004_163909_865.jpg"},
-    {"name": "Поедатель чижика",       "rarity": "🔷 Редкая",      "price": 500,   "file": "IMG_20261004_205356_295.jpg"},
-    {"name": "Фонк",                   "rarity": "🔷 Редкая",      "price": 400,   "file": "ChatGPT Image 4 окт. 2026 г., 15_45_06.png"},
-    {"name": "Грустный хлеб",          "rarity": "🔮 Эпическая",   "price": 1000,  "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png"},
-    {"name": "Тру Адамс",              "rarity": "👑 Легендарная", "price": 5000,  "file": "ChatGPT Image 3 окт. 2026 г., 20_39_20.png"},
-    {"name": "Давалка",                "rarity": "👑 Легендарная", "price": 10000, "file": "IMG_20261004_211521_420.jpg"},
-    {"name": "Секретный трансформер",  "rarity": "♣️ Секретная",   "price": 67000, "file": "ChatGPT Image 27 сент. 2026 г., 13_10_10.png"},
-    {"name": "Moggфон",                "rarity": "♣️ Секретная",   "price": 50000, "file": "IMG_20261004_211400_997.jpg"},
+    {"name": "Поедатель чижика",        "rarity": "🔷 Редкая",      "price": 500,   "file": "IMG_20261004_205356_295.jpg"},
+    {"name": "Фонк",                    "rarity": "🔷 Редкая",      "price": 400,   "file": "ChatGPT Image 4 окт. 2026 г., 15_45_06.png"},
+    {"name": "Грустный хлеб",           "rarity": "🔮 Эпическая",   "price": 1000,  "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png"},
+    {"name": "Тру Адамс",               "rarity": "👑 Легендарная", "price": 5000,  "file": "ChatGPT Image 3 окт. 2026 г., 20_39_20.png"},
+    {"name": "Давалка",                 "rarity": "👑 Легендарная", "price": 10000, "file": "IMG_20261004_211521_420.jpg"},
+    {"name": "Moggфон",                 "rarity": "♣️ Секретная",   "price": 50000, "file": "IMG_20261004_211400_997.jpg"},
 ]
 
-UPGRADE_PRICES = {2: 100, 3: 1000}
+UPGRADE_PRICES = {2: 100000, 3: 1000000}
 MAX_LEVEL = 3
 
 db = sqlite3.connect("game.db")
