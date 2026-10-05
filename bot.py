@@ -1,29 +1,34 @@
 import asyncio
+import io
 import os
 import random
 import sqlite3
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from aiogram.filters import Command
+from PIL import Image, ImageDraw, ImageFont
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-COOLDOWN_MINUTES = 1  # 1 минута
+COOLDOWN_MINUTES = 1
+
+FONT_PATH = "Roboto-Italic-VariableFont_wdth,wght.ttf"
+BG_PATH = "ChatGPT Image 5 окт. 2026 г., 09_26_45.png"
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
-# ==== ШАНСЫ РЕДКОСТЕЙ (в сумме 100) ====
+# ==== ШАНСЫ РЕДКОСТЕЙ ====
 RARITY_CHANCES = {
     "⚪ Обычная":     60,
     "🔷 Редкая":      20,
     "🔮 Эпическая":   10,
     "👑 Легендарная": 6,
-    "♣️ Секретная":   4,  # суммарно на все секретные
+    "♣️ Секретная":   4,
 }
 
-# ==== КАРТОЧКИ (без "chance" — он теперь у редкости) ====
+# ==== КАРТОЧКИ ====
 cards = [
     {"name": "Засохшая лилия",        "rarity": "⚪ Обычная",     "price": 100,   "file": "Засохшая лилия на чёрном фоне (1).png"},
     {"name": "Поедатель чижика",      "rarity": "🔷 Редкая",      "price": 500,   "file": "IMG_20261004_205356_295.jpg"},
@@ -36,7 +41,7 @@ cards = [
 UPGRADE_PRICES = {2: 100, 3: 1000}
 MAX_LEVEL = 3
 
-# ==== БАЗА ДАННЫХ ====
+# ==== БАЗА ====
 db = sqlite3.connect("game.db")
 cur = db.cursor()
 cur.execute("""CREATE TABLE IF NOT EXISTS users (
@@ -59,22 +64,18 @@ db.commit()
 
 
 def roll_card():
-    """Выбирает редкость по шансам, потом случайную карту внутри неё."""
-    # 1. Выбираем редкость
     total = sum(RARITY_CHANCES.values())
     r = random.uniform(0, total)
     upto = 0
-    chosen_rarity = None
+    chosen = None
     for rarity, chance in RARITY_CHANCES.items():
         upto += chance
         if r <= upto:
-            chosen_rarity = rarity
+            chosen = rarity
             break
-
-    # 2. Среди карт этой редкости выбираем случайную
-    pool = [c for c in cards if c["rarity"] == chosen_rarity]
+    pool = [c for c in cards if c["rarity"] == chosen]
     if not pool:
-        pool = cards  # на всякий случай
+        pool = cards
     return random.choice(pool)
 
 
@@ -99,6 +100,59 @@ def format_cooldown(seconds_left):
     return f"{secs} сек"
 
 
+async def make_profile_image(user_id, username, balance, place, level, total_cards):
+    bg = Image.open(BG_PATH).convert("RGBA")
+    w, h = bg.size
+
+    avatar = None
+    try:
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+        if photos.total_count > 0:
+            file_id = photos.photos[0][-1].file_id
+            file = await bot.get_file(file_id)
+            data = await bot.download_file(file.file_path)
+            avatar = Image.open(io.BytesIO(data.read())).convert("RGBA")
+    except Exception:
+        pass
+
+    size = int(h * 0.55)
+    if avatar is None:
+        avatar = Image.new("RGBA", (size, size), (60, 60, 80, 255))
+    else:
+        avatar = avatar.resize((size, size))
+
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+    avatar.putalpha(mask)
+
+    avatar_x = int(w * 0.075)
+    avatar_y = (h - size) // 2
+    bg.paste(avatar, (avatar_x, avatar_y), avatar)
+
+    draw = ImageDraw.Draw(bg)
+    try:
+        font_big = ImageFont.truetype(FONT_PATH, 46)
+        font_mid = ImageFont.truetype(FONT_PATH, 34)
+        font_small = ImageFont.truetype(FONT_PATH, 28)
+    except Exception:
+        font_big = font_mid = font_small = ImageFont.load_default()
+
+    x = int(w * 0.42)
+    y = int(h * 0.15)
+    line = int(h * 0.15)
+
+    draw.text((x, y), f"@{username or 'Игрок'}", font=font_big, fill="white")
+    draw.text((x, y + line), f"💰 Баланс: {balance}", font=font_mid, fill="#FFD700")
+    draw.text((x, y + line * 2), f"⬆️ Уровень: {level}", font=font_mid, fill="#00E5FF")
+    draw.text((x, y + line * 3), f"🎴 Карт: {total_cards}", font=font_small, fill="#BBBBBB")
+    draw.text((x, y + line * 4), f"🏆 Место: #{place}", font=font_small, fill="#00FF99")
+
+    output = io.BytesIO()
+    bg.save(output, format="PNG")
+    output.seek(0)
+    return output
+
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     get_user(message.from_user.id, message.from_user.username)
@@ -107,12 +161,13 @@ async def start(message: types.Message):
         "/card — выбить карточку\n"
         "/mycards — инвентарь\n"
         "/balance — баланс монет\n"
-        "/sell <название> — продать карточку\n"
-        "/upgrade — купить улучшение\n"
-        "/profile — профиль\n"
+        "/sell — продать карточку\n"
+        "/sellall — продать всё\n"
+        "/upgrade — улучшение\n"
+        "/profile — профиль с аватаркой\n"
         "/top — топ-3 игрока\n"
-        "/trade @username НазваниеКарты — предложить обмен\n"
-        "/accept, /decline — принять/отклонить трейд"
+        "/trade @username Название — трейд\n"
+        "/accept, /decline — принять/отклонить"
     )
 
 
@@ -126,12 +181,10 @@ async def card(message: types.Message):
         elapsed = datetime.now() - last_dt
         if elapsed < timedelta(minutes=COOLDOWN_MINUTES):
             left = timedelta(minutes=COOLDOWN_MINUTES) - elapsed
-            seconds_left = int(left.total_seconds())
-            await message.answer(f"⏳ Подожди ещё {format_cooldown(seconds_left)}.")
+            await message.answer(f"⏳ Подожди ещё {format_cooldown(int(left.total_seconds()))}.")
             return
 
-    count = level
-    for _ in range(count):
+    for _ in range(level):
         c = roll_card()
         cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, c["name"]))
         photo = FSInputFile(c["file"])
@@ -171,13 +224,21 @@ async def profile(message: types.Message):
     balance, _, level = get_user(uid, message.from_user.username)
     cur.execute("SELECT COUNT(*) FROM inventory WHERE user_id = ?", (uid,))
     total = cur.fetchone()[0]
-    await message.answer(
-        f"👤 *Профиль*\n\n"
-        f"💰 Баланс: {balance} монет\n"
-        f"⬆️ Уровень: {level} (карт за /card: {level})\n"
-        f"🎴 Карт в инвентаре: {total}",
-        parse_mode="Markdown"
-    )
+    cur.execute("SELECT COUNT(*) FROM users WHERE balance > ?", (balance,))
+    place = cur.fetchone()[0] + 1
+
+    try:
+        img = await make_profile_image(uid, message.from_user.username, balance, place, level, total)
+        photo = BufferedInputFile(img.read(), filename="profile.png")
+        await message.answer_photo(photo)
+    except Exception as e:
+        await message.answer(
+            f"👤 *Профиль*\n\n"
+            f"💰 Баланс: {balance}\n⬆️ Уровень: {level}\n"
+            f"🎴 Карт: {total}\n🏆 Место: #{place}\n\n"
+            f"_Ошибка картинки: {e}_",
+            parse_mode="Markdown"
+        )
 
 
 @dp.message(Command("top"))
@@ -193,6 +254,8 @@ async def top(message: types.Message):
         name = f"@{uname}" if uname else "Аноним"
         text += f"{medals[i]} {name} — {bal} монет\n"
     await message.answer(text, parse_mode="Markdown")
+
+
 @dp.message(Command("sell"))
 async def sell(message: types.Message):
     uid = message.from_user.id
@@ -214,6 +277,8 @@ async def sell(message: types.Message):
     cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (card_data["price"], uid))
     db.commit()
     await message.answer(f"✅ Продано: {card_data['name']} за {card_data['price']} монет")
+
+
 @dp.message(Command("sellall"))
 async def sellall(message: types.Message):
     uid = message.from_user.id
@@ -222,7 +287,6 @@ async def sellall(message: types.Message):
     if not rows:
         await message.answer("❌ У тебя нет карточек.")
         return
-
     total_sum = 0
     text = "💰 *Что будет продано:*\n\n"
     for name, cnt in rows:
@@ -238,68 +302,55 @@ async def sellall(message: types.Message):
         InlineKeyboardButton(text="✅ Подтвердить", callback_data="sellall_yes"),
         InlineKeyboardButton(text="❌ Отклонить", callback_data="sellall_no"),
     ]])
-
     await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 
 @dp.callback_query(F.data.startswith("sellall_"))
 async def sellall_callback(call: types.CallbackQuery):
     uid = call.from_user.id
-
     if call.data == "sellall_no":
         await call.message.edit_text("❌ Продажа отменена.")
         await call.answer()
         return
-
     cur.execute("SELECT card_name, COUNT(*) FROM inventory WHERE user_id = ? GROUP BY card_name", (uid,))
     rows = cur.fetchall()
     if not rows:
         await call.answer("Инвентарь пуст!", show_alert=True)
         return
-
     total_sum = 0
     for name, cnt in rows:
         card_data = next((c for c in cards if c["name"] == name), None)
         if not card_data:
             continue
         total_sum += card_data["price"] * cnt
-
     cur.execute("DELETE FROM inventory WHERE user_id = ?", (uid,))
     cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (total_sum, uid))
     db.commit()
-
     await call.message.edit_text(f"✅ Продано всё за {total_sum} монет.")
     await call.answer("Готово!")
 
-# ==== АПГРЕЙД ====
+
 @dp.message(Command("upgrade"))
 async def upgrade(message: types.Message):
     uid = message.from_user.id
     balance, _, level = get_user(uid, message.from_user.username)
-
     if level >= MAX_LEVEL:
         await message.answer("⛔ У тебя уже максимальный уровень (3).")
         return
-
     next_level = level + 1
     price = UPGRADE_PRICES[next_level]
-
     if balance < price:
         await message.answer(f"❌ Не хватает монет. Нужно {price}, у тебя {balance}.")
         return
-
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"upg_yes_{next_level}"),
-        InlineKeyboardButton(text="❌ Отклонить", callback_data=f"upg_no"),
+        InlineKeyboardButton(text="❌ Отклонить", callback_data="upg_no"),
     ]])
-
     await message.answer(
         f"⬆️ *Улучшение до уровня {next_level}*\n\n"
         f"Будет выдавать {next_level} карты за /card\n\n"
-        f"💰 Цена: {price} монет\n"
-        f"💳 У тебя: {balance} монет",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        f"💰 Цена: {price} монет\n💳 У тебя: {balance} монет",
+        reply_markup=kb, parse_mode="Markdown"
     )
 
 
@@ -307,60 +358,48 @@ async def upgrade(message: types.Message):
 async def upgrade_callback(call: types.CallbackQuery):
     uid = call.from_user.id
     balance, _, level = get_user(uid, call.from_user.username)
-
     if call.data == "upg_no":
         await call.message.edit_text("❌ Улучшение отменено.")
         await call.answer()
         return
-
     next_level = int(call.data.split("_")[2])
     price = UPGRADE_PRICES[next_level]
-
     if level >= next_level:
         await call.answer("Ты уже купил это улучшение!", show_alert=True)
         return
     if balance < price:
         await call.answer("Недостаточно монет!", show_alert=True)
         return
-
     cur.execute("UPDATE users SET balance = balance - ?, level = ? WHERE user_id = ?", (price, next_level, uid))
     db.commit()
     await call.message.edit_text(f"✅ Улучшение куплено! Теперь ты уровня {next_level} — выпадает {next_level} карты за /card.")
     await call.answer("Улучшение активировано!")
 
 
-# ==== ТРЕЙДЫ ====
 @dp.message(Command("trade"))
 async def trade(message: types.Message):
     uid = message.from_user.id
     args = message.text.split(maxsplit=2)
-
     if len(args) < 3:
         await message.answer("Использование: /trade @username НазваниеКарты")
         return
-
     target_username = args[1].lstrip("@")
     card_name = args[2].strip()
-
     cur.execute("SELECT user_id, username FROM users WHERE username = ?", (target_username,))
     row = cur.fetchone()
     if not row:
-        await message.answer("❌ Игрок не найден. Он должен хоть раз написать боту.")
+        await message.answer("❌ Игрок не найден.")
         return
-
     target_id, target_uname = row
     if target_id == uid:
         await message.answer("❌ Нельзя торговать с самим собой.")
         return
-
     cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? LIMIT 1", (uid, card_name))
     if not cur.fetchone():
         await message.answer(f"❌ У тебя нет карточки «{card_name}».")
         return
-
     cur.execute("INSERT INTO trades (from_id, to_id, card_name) VALUES (?, ?, ?)", (uid, target_id, card_name))
     db.commit()
-
     await message.answer(f"✅ Предложение отправлено @{target_uname}.")
     try:
         await bot.send_message(
@@ -381,7 +420,6 @@ async def accept(message: types.Message):
         await message.answer("❌ Нет активных предложений.")
         return
     rowid, from_id, card_name = row
-
     cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? LIMIT 1", (from_id, card_name))
     src = cur.fetchone()
     if not src:
@@ -389,12 +427,10 @@ async def accept(message: types.Message):
         db.commit()
         await message.answer("❌ У отправителя уже нет этой карточки.")
         return
-
     cur.execute("DELETE FROM inventory WHERE rowid = ?", (src[0],))
     cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, card_name))
     cur.execute("DELETE FROM trades WHERE rowid = ?", (rowid,))
     db.commit()
-
     await message.answer(f"✅ Ты получил карточку «{card_name}».")
     try:
         await bot.send_message(from_id, f"✅ @{message.from_user.username or 'Игрок'} принял твой трейд «{card_name}».")
