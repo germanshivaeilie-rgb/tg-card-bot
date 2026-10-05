@@ -19,7 +19,6 @@ BG_PATH = "ChatGPT Image 5 окт. 2026 г., 09_26_45.png"
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
-# ==== ШАНСЫ РЕДКОСТЕЙ ====
 RARITY_CHANCES = {
     "⚪ Обычная":     60,
     "🔷 Редкая":      20,
@@ -28,7 +27,6 @@ RARITY_CHANCES = {
     "♣️ Секретная":   4,
 }
 
-# ==== КАРТОЧКИ ====
 cards = [
     {"name": "Засохшая лилия",        "rarity": "⚪ Обычная",     "price": 100,   "file": "Засохшая лилия на чёрном фоне (1).png"},
     {"name": "Поедатель чижика",      "rarity": "🔷 Редкая",      "price": 500,   "file": "IMG_20261004_205356_295.jpg"},
@@ -41,7 +39,6 @@ cards = [
 UPGRADE_PRICES = {2: 100, 3: 1000}
 MAX_LEVEL = 3
 
-# ==== БАЗА ====
 db = sqlite3.connect("game.db")
 cur = db.cursor()
 cur.execute("""CREATE TABLE IF NOT EXISTS users (
@@ -131,21 +128,20 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
 
     draw = ImageDraw.Draw(bg)
     try:
-        font_big = ImageFont.truetype(FONT_PATH, 46)
-        font_mid = ImageFont.truetype(FONT_PATH, 34)
-        font_small = ImageFont.truetype(FONT_PATH, 28)
+        font_big = ImageFont.truetype(FONT_PATH, 72)
+        font_mid = ImageFont.truetype(FONT_PATH, 50)
     except Exception:
-        font_big = font_mid = font_small = ImageFont.load_default()
+        font_big = font_mid = ImageFont.load_default()
 
     x = int(w * 0.42)
-    y = int(h * 0.15)
-    line = int(h * 0.15)
+    y = int(h * 0.18)
+    line = int(h * 0.17)
 
     draw.text((x, y), f"@{username or 'Игрок'}", font=font_big, fill="white")
-    draw.text((x, y + line), f"💰 Баланс: {balance}", font=font_mid, fill="#FFD700")
-    draw.text((x, y + line * 2), f"⬆️ Уровень: {level}", font=font_mid, fill="#00E5FF")
-    draw.text((x, y + line * 3), f"🎴 Карт: {total_cards}", font=font_small, fill="#BBBBBB")
-    draw.text((x, y + line * 4), f"🏆 Место: #{place}", font=font_small, fill="#00FF99")
+    draw.text((x, y + line), f"Баланс: {balance}", font=font_mid, fill="#FFD700")
+    draw.text((x, y + line * 2), f"Уровень: {level}", font=font_mid, fill="#00E5FF")
+    draw.text((x, y + line * 3), f"Карт: {total_cards}", font=font_mid, fill="#CCCCCC")
+    draw.text((x, y + line * 4), f"Место: #{place}", font=font_mid, fill="#00FF99")
 
     output = io.BytesIO()
     bg.save(output, format="PNG")
@@ -248,11 +244,14 @@ async def top(message: types.Message):
     if not rows:
         await message.answer("Пока никто не играл.")
         return
-    text = "🏆 *Топ-3 игрока по балансу:*\n\n"
+
     medals = ["🥇", "🥈", "🥉"]
+    text = "🏆 *Топ-3 игрока по балансу:*\n\n"
     for i, (uname, bal) in enumerate(rows):
-        name = f"@{uname}" if uname else "Аноним"
-        text += f"{medals[i]} {name} — {bal} монет\n"
+        name = f"@{uname}" if uname else f"Игрок #{i+1}"
+        text += f"{medals[i]} *{name}*\n"
+        text += f"      💰 Баланс: {bal} монет\n\n"
+
     await message.answer(text, parse_mode="Markdown")
 
 
@@ -376,9 +375,11 @@ async def upgrade_callback(call: types.CallbackQuery):
     await call.answer("Улучшение активировано!")
 
 
+# ==== ТРЕЙД ====
 @dp.message(Command("trade"))
 async def trade(message: types.Message):
     uid = message.from_user.id
+    sender_name = message.from_user.username or message.from_user.full_name
     args = message.text.split(maxsplit=2)
     if len(args) < 3:
         await message.answer("Использование: /trade @username НазваниеКарты")
@@ -388,7 +389,7 @@ async def trade(message: types.Message):
     cur.execute("SELECT user_id, username FROM users WHERE username = ?", (target_username,))
     row = cur.fetchone()
     if not row:
-        await message.answer("❌ Игрок не найден.")
+        await message.answer("❌ Игрок не найден. Он должен хоть раз написать боту.")
         return
     target_id, target_uname = row
     if target_id == uid:
@@ -404,8 +405,12 @@ async def trade(message: types.Message):
     try:
         await bot.send_message(
             target_id,
-            f"🎁 @{message.from_user.username or 'Игрок'} предлагает тебе карточку «{card_name}».\n\n"
-            f"Принять: /accept\nОтклонить: /decline"
+            f"🤝 *Тебе предложили трейд!*\n\n"
+            f"👤 От: @{sender_name}\n"
+            f"🎴 Карточка: *{card_name}*\n\n"
+            f"Если согласен — /accept\n"
+            f"Если нет — /decline",
+            parse_mode="Markdown"
         )
     except Exception:
         pass
@@ -414,6 +419,7 @@ async def trade(message: types.Message):
 @dp.message(Command("accept"))
 async def accept(message: types.Message):
     uid = message.from_user.id
+    accepter_name = message.from_user.username or message.from_user.full_name
     cur.execute("SELECT rowid, from_id, card_name FROM trades WHERE to_id = ? ORDER BY rowid DESC LIMIT 1", (uid,))
     row = cur.fetchone()
     if not row:
@@ -431,9 +437,14 @@ async def accept(message: types.Message):
     cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, card_name))
     cur.execute("DELETE FROM trades WHERE rowid = ?", (rowid,))
     db.commit()
-    await message.answer(f"✅ Ты получил карточку «{card_name}».")
+    await message.answer(f"✅ Ты принял трейд и получил карточку *{card_name}*.", parse_mode="Markdown")
     try:
-        await bot.send_message(from_id, f"✅ @{message.from_user.username or 'Игрок'} принял твой трейд «{card_name}».")
+        await bot.send_message(
+            from_id,
+            f"✅ *Твой трейд принят!*\n\n"
+            f"👤 @{accepter_name} принял карточку *{card_name}*.",
+            parse_mode="Markdown"
+        )
     except Exception:
         pass
 
@@ -441,6 +452,7 @@ async def accept(message: types.Message):
 @dp.message(Command("decline"))
 async def decline(message: types.Message):
     uid = message.from_user.id
+    decliner_name = message.from_user.username or message.from_user.full_name
     cur.execute("SELECT rowid, from_id, card_name FROM trades WHERE to_id = ? ORDER BY rowid DESC LIMIT 1", (uid,))
     row = cur.fetchone()
     if not row:
@@ -449,9 +461,14 @@ async def decline(message: types.Message):
     rowid, from_id, card_name = row
     cur.execute("DELETE FROM trades WHERE rowid = ?", (rowid,))
     db.commit()
-    await message.answer("❌ Трейд отклонён.")
+    await message.answer(f"❌ Трейд на *{card_name}* отклонён.", parse_mode="Markdown")
     try:
-        await bot.send_message(from_id, f"❌ Трейд «{card_name}» отклонён.")
+        await bot.send_message(
+            from_id,
+            f"❌ *Твой трейд отклонён.*\n\n"
+            f"👤 @{decliner_name} отказался от карточки *{card_name}*.",
+            parse_mode="Markdown"
+        )
     except Exception:
         pass
 
