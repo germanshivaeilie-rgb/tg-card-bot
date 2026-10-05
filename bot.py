@@ -33,6 +33,7 @@ cards = [
     {"name": "Шоколадный глаз рубрика", "rarity": "⚪ Обычная",     "price": 150,    "file": "IMG_20261004_163909_865.jpg"},
     {"name": "Поедатель чижика",        "rarity": "🔷 Редкая",      "price": 500,    "file": "IMG_20261004_205356_295.jpg"},
     {"name": "Фонк",                    "rarity": "🔷 Редкая",      "price": 400,    "file": "ChatGPT Image 4 окт. 2026 г., 15_45_06.png"},
+    {"name": "Лера",                    "rarity": "🔷 Редкая",      "price": 750,    "file": "IMG_20261005_193418_201.jpg"},
     {"name": "Грустный хлеб",           "rarity": "🔮 Эпическая",   "price": 1000,   "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png"},
     {"name": "Ляшки асеки",             "rarity": "🔮 Эпическая",   "price": 800,    "file": "IMG_20261005_143214_562.jpg"},
     {"name": "Зелёная шлюшка",          "rarity": "🔮 Эпическая",   "price": 1500,   "file": "IMG_20261005_152528_718.jpg"},
@@ -45,7 +46,6 @@ cards = [
 UPGRADE_PRICES = {2: 100000, 3: 1000000}
 MAX_LEVEL = 3
 
-# ==== COLOR DICE ====
 COLORS = [
     {"emoji": "🔵", "name": "Синий",       "code": "blue"},
     {"emoji": "🔴", "name": "Красный",     "code": "red"},
@@ -55,7 +55,6 @@ COLORS = [
     {"emoji": "🟠", "name": "Оранжевый",   "code": "orange"},
 ]
 
-# Хранилище активных игр: {user_id: {"color": "...", "state": "wait_bet"}}
 color_games = {}
 
 db = sqlite3.connect("game.db")
@@ -227,12 +226,17 @@ async def card(message: types.Message):
             f"{c['rarity']} | 💰 Цена: {c['price']} монет"
         )
 
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
-                text=f"💰 Продать телефон ({c['price']} монет)",
+        # Кнопка продажи с названием карты + кнопка Color Dice
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"💰 Продать: {c['name']} ({c['price']})",
                 callback_data=f"sell_card_{inv_id}_{c['price']}"
-            )
-        ]])
+            )],
+            [InlineKeyboardButton(
+                text="🎲 Color Dice",
+                callback_data="open_color"
+            )],
+        ])
 
         photo = FSInputFile(c["file"])
         await message.answer_photo(photo, caption=caption, reply_markup=kb)
@@ -265,6 +269,7 @@ async def sell_card_callback(call: types.CallbackQuery):
 # ==== COLOR DICE ====
 @dp.message(Command("color"))
 async def color_start(message: types.Message):
+    username = message.from_user.username or message.from_user.full_name or "Игрок"
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🔵 Синий",       callback_data="col_blue"),
@@ -280,15 +285,41 @@ async def color_start(message: types.Message):
         ],
     ])
     await message.answer(
-        "🎲 *Color Dice*\n\n"
-        "Выбери цвет, на который ставишь.\n\n"
+        f"@{username}, выберите цвет 🎲\n\n"
         "Правила:\n"
         "🎉 1 совпадение → выигрыш ×2\n"
         "🎉 4 совпадения → выигрыш ×4\n"
         "❌ 0, 2, 3 совпадения → проигрыш",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        reply_markup=kb
     )
+
+
+@dp.callback_query(F.data == "open_color")
+async def open_color_from_card(call: types.CallbackQuery):
+    username = call.from_user.username or call.from_user.full_name or "Игрок"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🔵 Синий",       callback_data="col_blue"),
+            InlineKeyboardButton(text="🔴 Красный",     callback_data="col_red"),
+        ],
+        [
+            InlineKeyboardButton(text="🟡 Жёлтый",      callback_data="col_yellow"),
+            InlineKeyboardButton(text="🟢 Зелёный",     callback_data="col_green"),
+        ],
+        [
+            InlineKeyboardButton(text="🟣 Фиолетовый",  callback_data="col_purple"),
+            InlineKeyboardButton(text="🟠 Оранжевый",   callback_data="col_orange"),
+        ],
+    ])
+    await call.message.answer(
+        f"@{username}, выберите цвет 🎲\n\n"
+        "Правила:\n"
+        "🎉 1 совпадение → выигрыш ×2\n"
+        "🎉 4 совпадения → выигрыш ×4\n"
+        "❌ 0, 2, 3 совпадения → проигрыш",
+        reply_markup=kb
+    )
+    await call.answer()
 
 
 @dp.callback_query(F.data.startswith("col_"))
@@ -326,7 +357,7 @@ async def color_bet(message: types.Message):
     uid = message.from_user.id
     game = color_games.get(uid)
     if not game or game.get("state") != "wait_bet":
-        return  # не наш случай — игнорируем
+        return
 
     bet = int(message.text)
     if bet <= 0:
@@ -338,19 +369,16 @@ async def color_bet(message: types.Message):
         await message.answer(f"❌ Не хватает монет. У тебя {balance}, нужно {bet}.")
         return
 
-    # Списываем ставку
     cur.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (bet, uid))
     db.commit()
 
     chosen = game["color"]
     del color_games[uid]
 
-    # Крутим 4 цвета
     result = [random.choice(COLORS) for _ in range(4)]
     matches = sum(1 for c in result if c["code"] == chosen["code"])
 
-    # Красивая анимация
-    msg = await message.answer(f"🎲 Крутим...\n\n{chosen['emoji']} (изменено)")
+    msg = await message.answer(f"🎲 Крутим...\n\n{chosen['emoji']}")
     await asyncio.sleep(0.9)
 
     progressive = []
@@ -359,12 +387,11 @@ async def color_bet(message: types.Message):
         text = (
             f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n"
             f"💰 Ставка: {bet} монет\n\n"
-            f"{' '.join(progressive)} (изменено)"
+            f"{' '.join(progressive)}"
         )
         await msg.edit_text(text)
         await asyncio.sleep(0.9)
 
-    # Финальный результат
     if matches == 1:
         win = bet * 2
         cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
