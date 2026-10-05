@@ -170,6 +170,7 @@ async def start(message: types.Message):
 @dp.message(Command("card"))
 async def card(message: types.Message):
     uid = message.from_user.id
+    username = message.from_user.username or message.from_user.full_name or "Игрок"
     balance, last, level = get_user(uid, message.from_user.username)
 
     if last:
@@ -184,8 +185,12 @@ async def card(message: types.Message):
         c = roll_card()
         cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, c["name"]))
         photo = FSInputFile(c["file"])
-        caption = f"🎴 *{c['name']}*\nРедкость: {c['rarity']}\n💰 Цена: {c['price']} монет"
-        await message.answer_photo(photo, caption=caption, parse_mode="Markdown")
+        caption = (
+            f"@{username}, вам выпала:\n"
+            f"🎴 {c['name']}\n"
+            f"{c['rarity']} | 💰 Цена: {c['price']} монет"
+        )
+        await message.answer_photo(photo, caption=caption)
 
     cur.execute("UPDATE users SET last_card = ? WHERE user_id = ?", (datetime.now().isoformat(), uid))
     db.commit()
@@ -375,7 +380,6 @@ async def upgrade_callback(call: types.CallbackQuery):
     await call.answer("Улучшение активировано!")
 
 
-# ==== ТРЕЙД ====
 @dp.message(Command("trade"))
 async def trade(message: types.Message):
     uid = message.from_user.id
