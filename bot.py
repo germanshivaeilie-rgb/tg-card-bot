@@ -760,4 +760,326 @@ async def handle_bet(message: types.Message):
         mines_count = random.randint(2, 6)
         mines_set = set(random.sample(range(9), mines_count))
 
-        miner_g
+        miner_games[uid] = {
+            "state": "playing",
+            "bet": bet,
+            "mines": mines_set,
+            "opened": [],
+        }
+
+        await message.answer(
+            f"💣 *Минёр*\n"
+            f"💰 Ставка: {bet} монет\n"
+            f"🟢 Открыто: 0\n"
+            f"📈 Множитель: ×1.0\n"
+            f"💵 Заберёшь: {bet} монет",
+            reply_markup=miner_keyboard([], mines_set, uid),
+            parse_mode="Markdown"
+        )
+        return
+
+
+@dp.message(Command("mycards"))
+async def mycards(message: types.Message):
+    uid = message.from_user.id
+    cur.execute("SELECT card_name FROM inventory WHERE user_id = ?", (uid,))
+    rows = cur.fetchall()
+    if not rows:
+        await message.answer("У тебя пока нет карточек. Напиши /card")
+        return
+    counts = {}
+    for (name,) in rows:
+        counts[name] = counts.get(name, 0) + 1
+    text = "🎒 *Твой инвентарь:*\n\n"
+    for name, cnt in counts.items():
+        text += f"• {name} × {cnt}\n"
+    await message.answer(text, parse_mode="Markdown")
+
+
+@dp.message(Command("balance"))
+async def balance_cmd(message: types.Message):
+    balance, _, _, _ = get_user(message.from_user.id, message.from_user.username)
+    await message.answer(f"💰 У тебя {balance} монет")
+
+
+@dp.message(Command("profile"))
+async def profile(message: types.Message):
+    args = message.text.split(maxsplit=1)
+
+    if len(args) > 1:
+        target_username = args[1].lstrip("@").strip()
+        cur.execute("SELECT user_id, username, balance, level, registered_at FROM users WHERE username = ?", (target_username,))
+        row = cur.fetchone()
+        if not row:
+            await message.answer(f"❌ Игрок @{target_username} не найден.")
+            return
+        target_id, target_uname, balance, level, registered_at = row
+    else:
+        target_id = message.from_user.id
+        target_uname = message.from_user.username
+        balance, _, level, registered_at = get_user(target_id, target_uname)
+
+    cur.execute("SELECT COUNT(*) FROM inventory WHERE user_id = ?", (target_id,))
+    total = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM users WHERE balance > ?", (balance,))
+    place = cur.fetchone()[0] + 1
+
+    date_str = format_date_ru(registered_at)
+
+    caption = (
+        f"👤 Это пользователь @{target_uname or 'Игрок'}\n"
+        f"📅 С {date_str}\n\n"
+        f"💰 Баланс: {balance} монет\n"
+        f"🏆 Место в топе: #{place}\n"
+        f"🎴 Карточек: {total}"
+    )
+
+    try:
+        img = await make_profile_image(target_id, target_uname, balance, place, level, total)
+        photo = BufferedInputFile(img.read(), filename="profile.png")
+        await message.answer_photo(photo, caption=caption)
+    except Exception as e:
+        await message.answer(caption + f"\n\n_Ошибка картинки: {e}_", parse_mode="Markdown")
+
+
+@dp.message(Command("top"))
+async def top(message: types.Message):
+    cur.execute("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 3")
+    rows = cur.fetchall()
+    if not rows:
+        await message.answer("Пока никто не играл.")
+        return
+
+    medals = ["🥇", "🥈", "🥉"]
+    text = "🏆 *Топ-3 игрока по балансу:*\n\n"
+    for i, (uname, bal) in enumerate(rows):
+        name = f"@{uname}" if uname else f"Игрок #{i+1}"
+        text += f"{medals[i]} *{name}*\n"
+        text += f"      💰 Баланс: {bal} монет\n\n"
+
+    await message.answer(text, parse_mode="Markdown")
+
+
+@dp.message(Command("sell"))
+async def sell(message: types.Message):
+    uid = message.from_user.id
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Использование: /sell Название карточки")
+        return
+    name = args[1].strip()
+    cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? LIMIT 1", (uid, name))
+    row = cur.fetchone()
+    if not row:
+        await message.answer("❌ Такой карточки у тебя нет.")
+        return
+    card_data = next((c for c in cards if c["name"].lower() == name.lower()), None)
+    if not card_data:
+        await message.answer("❌ Неизвестная карточка.")
+        return
+    cur.execute("DELETE FROM inventory WHERE rowid = ?", (row[0],))
+    cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (card_data["price"], uid))
+    db.commit()
+    await message.answer(f"✅ Продано: {card_data['name']} за {card_data['price']} монет")
+
+
+@dp.message(Command("sellall"))
+async def sellall(message: types.Message):
+    uid = message.from_user.id
+    cur.execute("SELECT card_name, COUNT(*) FROM inventory WHERE user_id = ? GROUP BY card_name", (uid,))
+    rows = cur.fetchall()
+    if not rows:
+        await message.answer("❌ У тебя нет карточек.")
+        return
+    total_sum = 0
+    text = "💰 *Что будет продано:*\n\n"
+    for name, cnt in rows:
+        card_data = next((c for c in cards if c["name"] == name), None)
+        if not card_data:
+            continue
+        subtotal = card_data["price"] * cnt
+        total_sum += subtotal
+        text += f"• {name} × {cnt} = {subtotal} монет\n"
+    text += f"\n💵 *Итого: {total_sum} монет*"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Подтвердить", callback_data="sellall_yes"),
+        InlineKeyboardButton(text="❌ Отклонить", callback_data="sellall_no"),
+    ]])
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+
+@dp.callback_query(F.data.startswith("sellall_"))
+async def sellall_callback(call: types.CallbackQuery):
+    uid = call.from_user.id
+    if call.data == "sellall_no":
+        await call.message.edit_text("❌ Продажа отменена.")
+        await call.answer()
+        return
+    cur.execute("SELECT card_name, COUNT(*) FROM inventory WHERE user_id = ? GROUP BY card_name", (uid,))
+    rows = cur.fetchall()
+    if not rows:
+        await call.answer("Инвентарь пуст!", show_alert=True)
+        return
+    total_sum = 0
+    for name, cnt in rows:
+        card_data = next((c for c in cards if c["name"] == name), None)
+        if not card_data:
+            continue
+        total_sum += card_data["price"] * cnt
+    cur.execute("DELETE FROM inventory WHERE user_id = ?", (uid,))
+    cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (total_sum, uid))
+    db.commit()
+    await call.message.edit_text(f"✅ Продано всё за {total_sum} монет.")
+    await call.answer("Готово!")
+
+
+@dp.message(Command("upgrade"))
+async def upgrade(message: types.Message):
+    uid = message.from_user.id
+    balance, _, level, _ = get_user(uid, message.from_user.username)
+    if level >= MAX_LEVEL:
+        await message.answer("⛔ У тебя уже максимальный уровень (3).")
+        return
+    next_level = level + 1
+    price = UPGRADE_PRICES[next_level]
+    if balance < price:
+        await message.answer(f"❌ Не хватает монет. Нужно {price}, у тебя {balance}.")
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"upg_yes_{next_level}"),
+        InlineKeyboardButton(text="❌ Отклонить", callback_data="upg_no"),
+    ]])
+    await message.answer(
+        f"⬆️ *Улучшение до уровня {next_level}*\n\n"
+        f"Будет выдавать {next_level} карты за /card\n\n"
+        f"💰 Цена: {price} монет\n💳 У тебя: {balance} монет",
+        reply_markup=kb, parse_mode="Markdown"
+    )
+
+
+@dp.callback_query(F.data.startswith("upg_"))
+async def upgrade_callback(call: types.CallbackQuery):
+    uid = call.from_user.id
+    balance, _, level, _ = get_user(uid, call.from_user.username)
+    if call.data == "upg_no":
+        await call.message.edit_text("❌ Улучшение отменено.")
+        await call.answer()
+        return
+    next_level = int(call.data.split("_")[2])
+    price = UPGRADE_PRICES[next_level]
+    if level >= next_level:
+        await call.answer("Ты уже купил это улучшение!", show_alert=True)
+        return
+    if balance < price:
+        await call.answer("Недостаточно монет!", show_alert=True)
+        return
+    cur.execute("UPDATE users SET balance = balance - ?, level = ? WHERE user_id = ?", (price, next_level, uid))
+    db.commit()
+    await call.message.edit_text(f"✅ Улучшение куплено! Теперь ты уровня {next_level} — выпадает {next_level} карты за /card.")
+    await call.answer("Улучшение активировано!")
+
+
+@dp.message(Command("trade"))
+async def trade(message: types.Message):
+    uid = message.from_user.id
+    sender_name = message.from_user.username or message.from_user.full_name
+    args = message.text.split(maxsplit=2)
+    if len(args) < 3:
+        await message.answer("Использование: /trade @username НазваниеКарты")
+        return
+    target_username = args[1].lstrip("@")
+    card_name = args[2].strip()
+    cur.execute("SELECT user_id, username FROM users WHERE username = ?", (target_username,))
+    row = cur.fetchone()
+    if not row:
+        await message.answer("❌ Игрок не найден. Он должен хоть раз написать боту.")
+        return
+    target_id, target_uname = row
+    if target_id == uid:
+        await message.answer("❌ Нельзя торговать с самим собой.")
+        return
+    cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? LIMIT 1", (uid, card_name))
+    if not cur.fetchone():
+        await message.answer(f"❌ У тебя нет карточки «{card_name}».")
+        return
+    cur.execute("INSERT INTO trades (from_id, to_id, card_name) VALUES (?, ?, ?)", (uid, target_id, card_name))
+    db.commit()
+    await message.answer(f"✅ Предложение отправлено @{target_uname}.")
+    try:
+        await bot.send_message(
+            target_id,
+            f"🤝 *Тебе предложили трейд!*\n\n"
+            f"👤 От: @{sender_name}\n"
+            f"🎴 Карточка: *{card_name}*\n\n"
+            f"Если согласен — /accept\n"
+            f"Если нет — /decline",
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
+
+
+@dp.message(Command("accept"))
+async def accept(message: types.Message):
+    uid = message.from_user.id
+    accepter_name = message.from_user.username or message.from_user.full_name
+    cur.execute("SELECT rowid, from_id, card_name FROM trades WHERE to_id = ? ORDER BY rowid DESC LIMIT 1", (uid,))
+    row = cur.fetchone()
+    if not row:
+        await message.answer("❌ Нет активных предложений.")
+        return
+    rowid, from_id, card_name = row
+    cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? LIMIT 1", (from_id, card_name))
+    src = cur.fetchone()
+    if not src:
+        cur.execute("DELETE FROM trades WHERE rowid = ?", (rowid,))
+        db.commit()
+        await message.answer("❌ У отправителя уже нет этой карточки.")
+        return
+    cur.execute("DELETE FROM inventory WHERE rowid = ?", (src[0],))
+    cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, card_name))
+    cur.execute("DELETE FROM trades WHERE rowid = ?", (rowid,))
+    db.commit()
+    await message.answer(f"✅ Ты принял трейд и получил карточку *{card_name}*.", parse_mode="Markdown")
+    try:
+        await bot.send_message(
+            from_id,
+            f"✅ *Твой трейд принят!*\n\n"
+            f"👤 @{accepter_name} принял карточку *{card_name}*.",
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
+
+
+@dp.message(Command("decline"))
+async def decline(message: types.Message):
+    uid = message.from_user.id
+    decliner_name = message.from_user.username or message.from_user.full_name
+    cur.execute("SELECT rowid, from_id, card_name FROM trades WHERE to_id = ? ORDER BY rowid DESC LIMIT 1", (uid,))
+    row = cur.fetchone()
+    if not row:
+        await message.answer("❌ Нет активных предложений.")
+        return
+    rowid, from_id, card_name = row
+    cur.execute("DELETE FROM trades WHERE rowid = ?", (rowid,))
+    db.commit()
+    await message.answer(f"❌ Трейд на *{card_name}* отклонён.", parse_mode="Markdown")
+    try:
+        await bot.send_message(
+            from_id,
+            f"❌ *Твой трейд отклонён.*\n\n"
+            f"👤 @{decliner_name} отказался от карточки *{card_name}*.",
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
+
+
+async def main():
+    await dp.start_polling(bot)
+
+
+asyncio.run(main())
