@@ -193,8 +193,6 @@ async def top(message: types.Message):
         name = f"@{uname}" if uname else "Аноним"
         text += f"{medals[i]} {name} — {bal} монет\n"
     await message.answer(text, parse_mode="Markdown")
-
-
 @dp.message(Command("sell"))
 async def sell(message: types.Message):
     uid = message.from_user.id
@@ -216,7 +214,62 @@ async def sell(message: types.Message):
     cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (card_data["price"], uid))
     db.commit()
     await message.answer(f"✅ Продано: {card_data['name']} за {card_data['price']} монет")
+@dp.message(Command("sellall"))
+async def sellall(message: types.Message):
+    uid = message.from_user.id
+    cur.execute("SELECT card_name, COUNT(*) FROM inventory WHERE user_id = ? GROUP BY card_name", (uid,))
+    rows = cur.fetchall()
+    if not rows:
+        await message.answer("❌ У тебя нет карточек.")
+        return
 
+    total_sum = 0
+    text = "💰 *Что будет продано:*\n\n"
+    for name, cnt in rows:
+        card_data = next((c for c in cards if c["name"] == name), None)
+        if not card_data:
+            continue
+        subtotal = card_data["price"] * cnt
+        total_sum += subtotal
+        text += f"• {name} × {cnt} = {subtotal} монет\n"
+    text += f"\n💵 *Итого: {total_sum} монет*"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Подтвердить", callback_data="sellall_yes"),
+        InlineKeyboardButton(text="❌ Отклонить", callback_data="sellall_no"),
+    ]])
+
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+
+@dp.callback_query(F.data.startswith("sellall_"))
+async def sellall_callback(call: types.CallbackQuery):
+    uid = call.from_user.id
+
+    if call.data == "sellall_no":
+        await call.message.edit_text("❌ Продажа отменена.")
+        await call.answer()
+        return
+
+    cur.execute("SELECT card_name, COUNT(*) FROM inventory WHERE user_id = ? GROUP BY card_name", (uid,))
+    rows = cur.fetchall()
+    if not rows:
+        await call.answer("Инвентарь пуст!", show_alert=True)
+        return
+
+    total_sum = 0
+    for name, cnt in rows:
+        card_data = next((c for c in cards if c["name"] == name), None)
+        if not card_data:
+            continue
+        total_sum += card_data["price"] * cnt
+
+    cur.execute("DELETE FROM inventory WHERE user_id = ?", (uid,))
+    cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (total_sum, uid))
+    db.commit()
+
+    await call.message.edit_text(f"✅ Продано всё за {total_sum} монет.")
+    await call.answer("Готово!")
 
 # ==== АПГРЕЙД ====
 @dp.message(Command("upgrade"))
