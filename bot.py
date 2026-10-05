@@ -45,6 +45,19 @@ cards = [
 UPGRADE_PRICES = {2: 100000, 3: 1000000}
 MAX_LEVEL = 3
 
+# ==== COLOR DICE ====
+COLORS = [
+    {"emoji": "🔵", "name": "Синий",       "code": "blue"},
+    {"emoji": "🔴", "name": "Красный",     "code": "red"},
+    {"emoji": "🟡", "name": "Жёлтый",      "code": "yellow"},
+    {"emoji": "🟢", "name": "Зелёный",     "code": "green"},
+    {"emoji": "🟣", "name": "Фиолетовый",  "code": "purple"},
+    {"emoji": "🟠", "name": "Оранжевый",   "code": "orange"},
+]
+
+# Хранилище активных игр: {user_id: {"color": "...", "state": "wait_bet"}}
+color_games = {}
+
 db = sqlite3.connect("game.db")
 cur = db.cursor()
 cur.execute("""CREATE TABLE IF NOT EXISTS users (
@@ -103,19 +116,13 @@ def format_cooldown(seconds_left):
     return f"{secs} сек"
 
 
-def make_circle_avatar(avatar_img, size, border=6):
-    """Делает круглую аватарку с белой обводкой."""
+def make_circle_avatar(avatar_img, size, border=8):
     avatar_img = avatar_img.resize((size, size))
-    # Маска круга
     mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
-
-    # Итог: делаем холст чуть больше, чтобы влезла обводка
     total = size + border * 2
     canvas = Image.new("RGBA", (total, total), (0, 0, 0, 0))
-    # Сначала белый круг-обводка
     ImageDraw.Draw(canvas).ellipse((0, 0, total, total), fill=(255, 255, 255, 255))
-    # Потом вставляем аватарку с прозрачностью
     canvas.paste(avatar_img, (border, border), mask)
     return canvas, total
 
@@ -139,9 +146,7 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
     if avatar is None:
         avatar = Image.new("RGBA", (size, size), (60, 60, 80, 255))
 
-    # Круглая аватарка с белой обводкой
     avatar_final, total_size = make_circle_avatar(avatar, size, border=8)
-
     avatar_x = int(w * 0.10)
     avatar_y = (h - total_size) // 2
     bg.paste(avatar_final, (avatar_x, avatar_y), avatar_final)
@@ -175,6 +180,7 @@ async def start(message: types.Message):
     await message.answer(
         "🎴 Привет! Я бот-коллекционер карточек.\n\n"
         "/card — выбить карточку\n"
+        "/color — игра Color Dice 🎲\n"
         "/mycards — инвентарь\n"
         "/balance — баланс монет\n"
         "/sell — продать карточку\n"
@@ -254,6 +260,143 @@ async def sell_card_callback(call: types.CallbackQuery):
         reply_markup=None
     )
     await call.answer(f"Получено {price} монет!")
+
+
+# ==== COLOR DICE ====
+@dp.message(Command("color"))
+async def color_start(message: types.Message):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🔵 Синий",       callback_data="col_blue"),
+            InlineKeyboardButton(text="🔴 Красный",     callback_data="col_red"),
+        ],
+        [
+            InlineKeyboardButton(text="🟡 Жёлтый",      callback_data="col_yellow"),
+            InlineKeyboardButton(text="🟢 Зелёный",     callback_data="col_green"),
+        ],
+        [
+            InlineKeyboardButton(text="🟣 Фиолетовый",  callback_data="col_purple"),
+            InlineKeyboardButton(text="🟠 Оранжевый",   callback_data="col_orange"),
+        ],
+    ])
+    await message.answer(
+        "🎲 *Color Dice*\n\n"
+        "Выбери цвет, на который ставишь.\n\n"
+        "Правила:\n"
+        "🎉 1 совпадение → выигрыш ×2\n"
+        "🎉 4 совпадения → выигрыш ×4\n"
+        "❌ 0, 2, 3 совпадения → проигрыш",
+        reply_markup=kb,
+        parse_mode="Markdown"
+    )
+
+
+@dp.callback_query(F.data.startswith("col_"))
+async def color_chosen(call: types.CallbackQuery):
+    uid = call.from_user.id
+    code = call.data.split("_", 1)[1]
+
+    chosen = next((c for c in COLORS if c["code"] == code), None)
+    if not chosen:
+        await call.answer("Ошибка цвета", show_alert=True)
+        return
+
+    color_games[uid] = {"color": chosen, "state": "wait_bet"}
+
+    await call.message.edit_text(
+        f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n\n"
+        f"💰 Напиши сумму ставки числом (например 100).\n"
+        f"Отмена — /cancel"
+    )
+    await call.answer()
+
+
+@dp.message(Command("cancel"))
+async def cancel_game(message: types.Message):
+    uid = message.from_user.id
+    if uid in color_games:
+        del color_games[uid]
+        await message.answer("❌ Игра отменена.")
+    else:
+        await message.answer("У тебя нет активной игры.")
+
+
+@dp.message(F.text.regexp(r"^\d+$"))
+async def color_bet(message: types.Message):
+    uid = message.from_user.id
+    game = color_games.get(uid)
+    if not game or game.get("state") != "wait_bet":
+        return  # не наш случай — игнорируем
+
+    bet = int(message.text)
+    if bet <= 0:
+        await message.answer("❌ Ставка должна быть больше 0.")
+        return
+
+    balance, _, _ = get_user(uid, message.from_user.username)
+    if balance < bet:
+        await message.answer(f"❌ Не хватает монет. У тебя {balance}, нужно {bet}.")
+        return
+
+    # Списываем ставку
+    cur.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (bet, uid))
+    db.commit()
+
+    chosen = game["color"]
+    del color_games[uid]
+
+    # Крутим 4 цвета
+    result = [random.choice(COLORS) for _ in range(4)]
+    matches = sum(1 for c in result if c["code"] == chosen["code"])
+
+    # Красивая анимация
+    msg = await message.answer(f"🎲 Крутим...\n\n{chosen['emoji']} (изменено)")
+    await asyncio.sleep(0.9)
+
+    progressive = []
+    for i, c in enumerate(result):
+        progressive.append(c["emoji"])
+        text = (
+            f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n"
+            f"💰 Ставка: {bet} монет\n\n"
+            f"{' '.join(progressive)} (изменено)"
+        )
+        await msg.edit_text(text)
+        await asyncio.sleep(0.9)
+
+    # Финальный результат
+    if matches == 1:
+        win = bet * 2
+        cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
+        db.commit()
+        result_text = (
+            f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n"
+            f"💰 Ставка: {bet} монет\n\n"
+            f"{' '.join(progressive)}\n\n"
+            f"Совпадений: {matches}\n"
+            f"🎉 *Поздравляю, ты выиграл {win} монет!* (×2)"
+        )
+    elif matches == 4:
+        win = bet * 4
+        cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
+        db.commit()
+        result_text = (
+            f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n"
+            f"💰 Ставка: {bet} монет\n\n"
+            f"{' '.join(progressive)}\n\n"
+            f"Совпадений: {matches}\n"
+            f"🎉 *ДЖЕКПОТ! Ты выиграл {win} монет!* (×4)"
+        )
+    else:
+        result_text = (
+            f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n"
+            f"💰 Ставка: {bet} монет\n\n"
+            f"{' '.join(progressive)}\n\n"
+            f"Совпадений: {matches}\n"
+            f"❌ *Увы, ты проиграл {bet} монет.*"
+        )
+
+    await msg.edit_text(result_text, parse_mode="Markdown")
 
 
 @dp.message(Command("mycards"))
