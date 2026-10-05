@@ -11,7 +11,7 @@ from aiogram.filters import Command
 from PIL import Image, ImageDraw, ImageFont
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-COOLDOWN_MINUTES = 60
+COOLDOWN_MINUTES = 15
 
 FONT_PATH = "Roboto-Italic-VariableFont_wdth,wght.ttf"
 BG_PATH = "ChatGPT Image 5 окт. 2026 г., 09_26_45.png"
@@ -20,23 +20,26 @@ bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
 RARITY_CHANCES = {
-    "⚪ Обычная":     60,
-    "🔷 Редкая":      20,
-    "🔮 Эпическая":   10,
-    "👑 Легендарная": 6,
-    "♣️ Секретная":   4,
+    "⚪ Обычная":      55,
+    "🔷 Редкая":       18,
+    "🔮 Эпическая":    10,
+    "👑 Легендарная":  6,
+    "♣️ Секретная":    3,
+    "🌌 Бесконечная":  2,
 }
 
 cards = [
-    {"name": "Засохшая лилия",          "rarity": "⚪ Обычная",     "price": 100,   "file": "Засохшая лилия на чёрном фоне (1).png"},
-    {"name": "Шоколадный глаз рубрика", "rarity": "⚪ Обычная",     "price": 150,   "file": "IMG_20261004_163909_865.jpg"},
-    {"name": "Поедатель чижика",        "rarity": "🔷 Редкая",      "price": 500,   "file": "IMG_20261004_205356_295.jpg"},
-    {"name": "Фонк",                    "rarity": "🔷 Редкая",      "price": 400,   "file": "ChatGPT Image 4 окт. 2026 г., 15_45_06.png"},
-    {"name": "Грустный хлеб",           "rarity": "🔮 Эпическая",   "price": 1000,  "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png"},
-    {"name": "Ляшки асеки",             "rarity": "🔮 Эпическая",   "price": 800,   "file": "IMG_20261005_143214_562.jpg"},
-    {"name": "Тру Адамс",               "rarity": "👑 Легендарная", "price": 5000,  "file": "ChatGPT Image 3 окт. 2026 г., 20_39_20.png"},
-    {"name": "Давалка",                 "rarity": "👑 Легендарная", "price": 10000, "file": "IMG_20261004_211521_420.jpg"},
-    {"name": "Moggфон",                 "rarity": "♣️ Секретная",   "price": 50000, "file": "IMG_20261004_211400_997.jpg"},
+    {"name": "Засохшая лилия",          "rarity": "⚪ Обычная",     "price": 100,    "file": "Засохшая лилия на чёрном фоне (1).png"},
+    {"name": "Шоколадный глаз рубрика", "rarity": "⚪ Обычная",     "price": 150,    "file": "IMG_20261004_163909_865.jpg"},
+    {"name": "Поедатель чижика",        "rarity": "🔷 Редкая",      "price": 500,    "file": "IMG_20261004_205356_295.jpg"},
+    {"name": "Фонк",                    "rarity": "🔷 Редкая",      "price": 400,    "file": "ChatGPT Image 4 окт. 2026 г., 15_45_06.png"},
+    {"name": "Грустный хлеб",           "rarity": "🔮 Эпическая",   "price": 1000,   "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png"},
+    {"name": "Ляшки асеки",             "rarity": "🔮 Эпическая",   "price": 800,    "file": "IMG_20261005_143214_562.jpg"},
+    {"name": "Зелёная шлюшка",          "rarity": "🔮 Эпическая",   "price": 1500,   "file": "IMG_20261005_152528_718.jpg"},
+    {"name": "Тру Адамс",               "rarity": "👑 Легендарная", "price": 5000,   "file": "ChatGPT Image 3 окт. 2026 г., 20_39_20.png"},
+    {"name": "Давалка",                 "rarity": "👑 Легендарная", "price": 10000,  "file": "IMG_20261004_211521_420.jpg"},
+    {"name": "Moggфон",                 "rarity": "♣️ Секретная",   "price": 50000,  "file": "IMG_20261004_211400_997.jpg"},
+    {"name": "Лучший Израель йегуда",   "rarity": "🌌 Бесконечная", "price": 500000, "file": "ChatGPT Image 5 окт. 2026 г., 15_32_46.png"},
 ]
 
 UPGRADE_PRICES = {2: 100000, 3: 1000000}
@@ -100,6 +103,23 @@ def format_cooldown(seconds_left):
     return f"{secs} сек"
 
 
+def make_circle_avatar(avatar_img, size, border=6):
+    """Делает круглую аватарку с белой обводкой."""
+    avatar_img = avatar_img.resize((size, size))
+    # Маска круга
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+
+    # Итог: делаем холст чуть больше, чтобы влезла обводка
+    total = size + border * 2
+    canvas = Image.new("RGBA", (total, total), (0, 0, 0, 0))
+    # Сначала белый круг-обводка
+    ImageDraw.Draw(canvas).ellipse((0, 0, total, total), fill=(255, 255, 255, 255))
+    # Потом вставляем аватарку с прозрачностью
+    canvas.paste(avatar_img, (border, border), mask)
+    return canvas, total
+
+
 async def make_profile_image(user_id, username, balance, place, level, total_cards):
     bg = Image.open(BG_PATH).convert("RGBA")
     w, h = bg.size
@@ -115,19 +135,16 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
     except Exception:
         pass
 
-    size = int(h * 0.55)
+    size = int(h * 0.5)
     if avatar is None:
         avatar = Image.new("RGBA", (size, size), (60, 60, 80, 255))
-    else:
-        avatar = avatar.resize((size, size))
 
-    mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
-    avatar.putalpha(mask)
+    # Круглая аватарка с белой обводкой
+    avatar_final, total_size = make_circle_avatar(avatar, size, border=8)
 
-    avatar_x = int(w * 0.075)
-    avatar_y = (h - size) // 2
-    bg.paste(avatar, (avatar_x, avatar_y), avatar)
+    avatar_x = int(w * 0.10)
+    avatar_y = (h - total_size) // 2
+    bg.paste(avatar_final, (avatar_x, avatar_y), avatar_final)
 
     draw = ImageDraw.Draw(bg)
     try:
@@ -173,7 +190,7 @@ async def start(message: types.Message):
 @dp.message(Command("card"))
 async def card(message: types.Message):
     uid = message.from_user.id
-    username = message.from_user.username or message.from_user.full_name or "Игрок"
+    username = message.from_user.username or "Игрок"
     balance, last, level = get_user(uid, message.from_user.username)
 
     if last:
@@ -181,22 +198,62 @@ async def card(message: types.Message):
         elapsed = datetime.now() - last_dt
         if elapsed < timedelta(minutes=COOLDOWN_MINUTES):
             left = timedelta(minutes=COOLDOWN_MINUTES) - elapsed
-            await message.answer(f"⏳ Подожди ещё {format_cooldown(int(left.total_seconds()))}.")
+            await message.answer(
+                f"@{username}, ты уже крутил, открой позже.\n"
+                f"⏳ Ждать ещё: {format_cooldown(int(left.total_seconds()))}"
+            )
             return
+
+    cur.execute("UPDATE users SET last_card = ? WHERE user_id = ?", (datetime.now().isoformat(), uid))
+    db.commit()
 
     for _ in range(level):
         c = roll_card()
         cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, c["name"]))
-        photo = FSInputFile(c["file"])
+        db.commit()
+
+        cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? ORDER BY rowid DESC LIMIT 1", (uid, c["name"]))
+        inv_id = cur.fetchone()[0]
+
         caption = (
             f"@{username}, вам выпала:\n"
             f"🎴 {c['name']}\n"
             f"{c['rarity']} | 💰 Цена: {c['price']} монет"
         )
-        await message.answer_photo(photo, caption=caption)
 
-    cur.execute("UPDATE users SET last_card = ? WHERE user_id = ?", (datetime.now().isoformat(), uid))
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text=f"💰 Продать телефон ({c['price']} монет)",
+                callback_data=f"sell_card_{inv_id}_{c['price']}"
+            )
+        ]])
+
+        photo = FSInputFile(c["file"])
+        await message.answer_photo(photo, caption=caption, reply_markup=kb)
+
+
+@dp.callback_query(F.data.startswith("sell_card_"))
+async def sell_card_callback(call: types.CallbackQuery):
+    parts = call.data.split("_")
+    inv_id = int(parts[2])
+    price = int(parts[3])
+    uid = call.from_user.id
+
+    cur.execute("SELECT card_name FROM inventory WHERE rowid = ? AND user_id = ?", (inv_id, uid))
+    row = cur.fetchone()
+    if not row:
+        await call.answer("❌ Эта карточка уже продана.", show_alert=True)
+        return
+
+    cur.execute("DELETE FROM inventory WHERE rowid = ?", (inv_id,))
+    cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (price, uid))
     db.commit()
+
+    await call.message.edit_caption(
+        caption=f"✅ Продано: {row[0]} за {price} монет",
+        reply_markup=None
+    )
+    await call.answer(f"Получено {price} монет!")
 
 
 @dp.message(Command("mycards"))
