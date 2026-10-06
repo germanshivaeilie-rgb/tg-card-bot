@@ -303,21 +303,18 @@ def make_circle_avatar(avatar_img, size, border=8):
     canvas.paste(avatar_img, (border, border), mask)
     return canvas, total
     async def make_profile_image(user_id, username, balance, place, level, total_cards):
-        bg = Image.open(BG_PATH).convert("RGBA")
-        w, h = bg.size
-        avatar = None
-        try:
-            photos = await bot.get_user_profile_photos(user_id, limit=1)
-            if photos.total_count > 0:
+    bg = Image.open(BG_PATH).convert("RGBA")
+    w, h = bg.size
+    avatar = None
+    try:
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+        if photos.total_count > 0:
             file_id = photos.photos[0][-1].file_id
             file = await bot.get_file(file_id)
             data = await bot.download_file(file.file_path)
             avatar = Image.open(io.BytesIO(data.read())).convert("RGBA")
     except Exception:
         pass
-    size = int(h * 0.5)
-    if avatar is None:
-        avatar = Image.new("RGBA", (size, size), (60, 60, 80, 255))
     avatar_final, total_size = make_circle_avatar(avatar, size, border=8)
     avatar_x = int(w * 0.10)
     avatar_x = int(w * 0.10)
