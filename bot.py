@@ -48,9 +48,8 @@ cards = [
     {"name": "Хеллоуинский босс",       "rarity": "💠 Специальная", "price": 100000, "file": "ChatGPT Image 6 окт. 2026 г., 12_19_03.png"},
 ]
 
-# Хеллоуинские карточки по кейсам
 HW_CARDS = {
-    "pumpkin": {  # Тыквенный кейс
+    "pumpkin": {
         "🎃 Тыквенная": [
             {"name": "Огненная Лера",   "price": 250,  "file": "ChatGPT Image 6 окт. 2026 г., 11_30_41.png"},
             {"name": "Пожиратель тыкв", "price": 500,  "file": "ChatGPT Image 6 окт. 2026 г., 11_26_06.png"},
@@ -66,7 +65,7 @@ HW_CARDS = {
             {"name": "Вампирский хлеб", "price": 20000, "file": "ChatGPT Image 6 окт. 2026 г., 10_48_44.png"},
         ],
     },
-    "skeleton": {  # Скелетный кейс
+    "skeleton": {
         "👻 Призрачная": [
             {"name": "Призрачный рубрик", "price": 1500, "file": "ChatGPT Image 6 окт. 2026 г., 11_23_00.png"},
             {"name": "Котакбас",          "price": 3000, "file": "ChatGPT Image 6 окт. 2026 г., 14_07_30.png"},
@@ -89,7 +88,7 @@ HW_CARDS = {
             {"name": "Коллекционер душ", "price": 100000, "file": "ChatGPT Image 6 окт. 2026 г., 14_45_53.png"},
         ],
     },
-    "ghost": {  # Призрачный кейс
+    "ghost": {
         "🧙 Ведьминская": [
             {"name": "Ведьминский Еля",   "price": 10000, "file": "ChatGPT Image 6 окт. 2026 г., 11_16_21.png"},
             {"name": "Ведьминская кошка", "price": 15000, "file": "ChatGPT Image 6 окт. 2026 г., 14_03_47.png"},
@@ -112,22 +111,21 @@ HW_CARDS = {
     },
 }
 
-# Шансы по кейсам
 CASE_CHANCES = {
-    "pumpkin": {  # Тыквенный
+    "pumpkin": {
         "🎃 Тыквенная": 70,
         "👻 Призрачная": 25,
         "🧙 Ведьминская": 4,
         "🧛 Вампирская": 1,
     },
-    "skeleton": {  # Скелетный
+    "skeleton": {
         "👻 Призрачная": 35,
         "🧙 Ведьминская": 25,
         "🧛 Вампирская": 20,
         "💀 Скелетная": 15,
         "😈 Демоническая": 5,
     },
-    "ghost": {  # Призрачный
+    "ghost": {
         "🧙 Ведьминская": 40,
         "🧛 Вампирская": 30,
         "💀 Скелетная": 18,
@@ -253,7 +251,6 @@ def roll_hw_card(case_type):
 
 
 def find_hw_card(name):
-    """Ищет хеллоуинскую карточку по имени (во всех кейсах)."""
     for case_type, rarities in HW_CARDS.items():
         for rarity, lst in rarities.items():
             for c in lst:
@@ -305,9 +302,7 @@ def make_circle_avatar(avatar_img, size, border=8):
     ImageDraw.Draw(canvas).ellipse((0, 0, total, total), fill=(255, 255, 255, 255))
     canvas.paste(avatar_img, (border, border), mask)
     return canvas, total
-
-
-async def make_profile_image(user_id, username, balance, place, level, total_cards):
+    async def make_profile_image(user_id, username, balance, place, level, total_cards):
     bg = Image.open(BG_PATH).convert("RGBA")
     w, h = bg.size
     avatar = None
@@ -347,7 +342,7 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
     return output
 
 
-   @dp.message(Command("start"))
+@dp.message(Command("start"))
 async def start(message: types.Message):
     get_user(message.from_user.id, message.from_user.username)
     await message.answer(
@@ -685,7 +680,7 @@ async def miner_cashout(call: types.CallbackQuery):
         reply_markup=kb, parse_mode="Markdown"
     )
     await call.answer(f"Получено {win}!")
-# ==== HALLOWEEN ====
+    # ==== HALLOWEEN ====
 @dp.message(Command("halloween"))
 async def halloween_menu(message: types.Message):
     uid = message.from_user.id
@@ -925,7 +920,9 @@ async def hw_open_case(call: types.CallbackQuery):
             reply_markup=kb, parse_mode="Markdown"
         )
     await call.answer("🎁 Кейс открыт!")
-    # ==== ХЕЛЛОУИН-БОСС ====
+
+
+# ==== ХЕЛЛОУИН-БОСС ====
 def boss_round_info(round_num):
     if round_num == 1:
         return 4, 1
