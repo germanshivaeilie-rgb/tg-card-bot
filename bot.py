@@ -40,7 +40,7 @@ cards = [
     {"name": "Тру Адамс",               "rarity": "👑 Легендарная", "price": 5000,   "file": "ChatGPT Image 3 окт. 2026 г., 20_39_20.png"},
     {"name": "Давалка",                 "rarity": "👑 Легендарная", "price": 10000,  "file": "IMG_20261004_211521_420.jpg"},
     {"name": "Moggфон",                 "rarity": "♣️ Секретная",   "price": 50000,  "file": "IMG_20261004_211400_997.jpg"},
-    {"name": "Топ 1 Минёр",             "rarity": "♣️ Секретная",   "price": 200000, "file": "Picsart_26-10-05_23-53-56-160.jpg"},
+    {"name": "Топ 1 Минёр",             "rarity": "💠 Специальная", "price": 50000,  "file": "Picsart_26-10-05_23-53-56-160.jpg"},
     {"name": "Лучший Израель йегуда",   "rarity": "🌌 Бесконечная", "price": 500000, "file": "ChatGPT Image 5 окт. 2026 г., 15_32_46.png"},
 ]
 
@@ -428,7 +428,7 @@ async def casino_miner(call: types.CallbackQuery):
         "• Спрятано 2-6 мин\n"
         "• Открывай клетки и увеличивай множитель\n"
         "• Попадёшь на мину — теряешь ставку\n"
-        "• Жми «💰 Забрать», чтобы забрать выигрыш\n\n"
+        "• Открыл все безопасные клетки — автоматически получаешь выигрыш\n\n"
         "📈 *Множители:*\n"
         "1 клетка → ×1.2\n"
         "2 клетки → ×1.5\n"
@@ -438,7 +438,7 @@ async def casino_miner(call: types.CallbackQuery):
         "6 клеток → ×8\n"
         "7 клеток → ×15\n"
         "8 клеток → ×30\n\n"
-        "🎁 *Особый приз:* если выпадет 6 мин и ты откроешь все 3 безопасные клетки — получишь секретную карточку «Топ 1 Минёр»!",
+        "🎁 *Особый приз:* открыл все безопасные клетки при 3+ минах — получаешь карточку «Топ 1 Минёр» (💠 Специальная)!",
         reply_markup=kb,
         parse_mode="Markdown"
     )
@@ -526,6 +526,7 @@ async def miner_open(call: types.CallbackQuery):
         await call.answer("Это не твоя игра!", show_alert=True)
         return
 
+    username = call.from_user.username or call.from_user.full_name or "Игрок"
     game = miner_games.get(uid)
     if not game or game.get("state") != "playing":
         await call.answer("Игра не активна.", show_alert=True)
@@ -537,12 +538,17 @@ async def miner_open(call: types.CallbackQuery):
 
     if idx in game["mines"]:
         game["state"] = "finished"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎰 Играть снова", callback_data=f"casino_miner_{uid}")],
+            [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
+        ])
         await call.message.edit_text(
-            f"💣 *Минёр*\n\n"
+            f"💣 *Минёр* — @{username}\n\n"
             f"💰 Ставка: {game['bet']} монет\n"
             f"💥 Ты попал на мину!\n\n"
             f"{' '.join(render_miner_field(game['opened'], game['mines'], reveal_all=True))}\n\n"
             f"❌ *Ты проиграл {game['bet']} монет.*",
+            reply_markup=kb,
             parse_mode="Markdown"
         )
         del miner_games[uid]
@@ -563,14 +569,19 @@ async def miner_open(call: types.CallbackQuery):
         cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
 
         special_card = False
-        if len(game["mines"]) == 6 and count == 3:
+        if len(game["mines"]) >= 3:
             cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, "Топ 1 Минёр"))
             special_card = True
 
         db.commit()
 
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎰 Играть снова", callback_data=f"casino_miner_{uid}")],
+            [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
+        ])
+
         text = (
-            f"💣 *Минёр*\n\n"
+            f"💣 *Минёр* — @{username}\n\n"
             f"💰 Ставка: {game['bet']} монет\n"
             f"🎉 Ты открыл все безопасные клетки!\n"
             f"📈 Множитель: ×{multiplier}\n\n"
@@ -578,9 +589,9 @@ async def miner_open(call: types.CallbackQuery):
             f"💰 *Выигрыш: {win} монет!*"
         )
         if special_card:
-            text += "\n\n🎁 *ТЕБЕ ВЫПАЛА СЕКРЕТНАЯ КАРТОЧКА «Топ 1 Минёр»!*"
+            text += "\n\n💠 *ТЕБЕ ВЫПАЛА СПЕЦИАЛЬНАЯ КАРТОЧКА «Топ 1 Минёр»!*"
 
-        await call.message.edit_text(text, parse_mode="Markdown")
+        await call.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
         if special_card:
             try:
@@ -591,7 +602,7 @@ async def miner_open(call: types.CallbackQuery):
                         uid,
                         photo,
                         caption=(
-                            f"🎁 *Секретная награда!*\n\n"
+                            f"🎁 *Специальная награда!*\n\n"
                             f"🎴 {card_data['name']}\n"
                             f"{card_data['rarity']} | 💰 Цена: {card_data['price']} монет"
                         ),
@@ -605,7 +616,7 @@ async def miner_open(call: types.CallbackQuery):
         return
 
     await call.message.edit_text(
-        f"💣 *Минёр*\n"
+        f"💣 *Минёр* — @{username}\n"
         f"💰 Ставка: {game['bet']} монет\n"
         f"🟢 Открыто: {count}\n"
         f"📈 Множитель: ×{multiplier}\n"
@@ -623,6 +634,7 @@ async def miner_cashout(call: types.CallbackQuery):
         await call.answer("Это не твоя игра!", show_alert=True)
         return
 
+    username = call.from_user.username or call.from_user.full_name or "Игрок"
     game = miner_games.get(uid)
     if not game or game.get("state") != "playing":
         await call.answer("Игра не активна.", show_alert=True)
@@ -642,12 +654,18 @@ async def miner_cashout(call: types.CallbackQuery):
     game["state"] = "finished"
     del miner_games[uid]
 
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎰 Играть снова", callback_data=f"casino_miner_{uid}")],
+        [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
+    ])
+
     await call.message.edit_text(
-        f"💣 *Минёр*\n\n"
+        f"💣 *Минёр* — @{username}\n\n"
         f"💰 Ставка: {game['bet']} монет\n"
         f"🟢 Открыто: {count}\n"
         f"📈 Множитель: ×{multiplier}\n\n"
         f"✅ *Ты забрал {win} монет!*",
+        reply_markup=kb,
         parse_mode="Markdown"
     )
     await call.answer(f"Получено {win} монет!")
@@ -674,6 +692,7 @@ async def cancel_game(message: types.Message):
 @dp.message(F.text.regexp(r"^\d+$"))
 async def handle_bet(message: types.Message):
     uid = message.from_user.id
+    username = message.from_user.username or message.from_user.full_name or "Игрок"
 
     # Color Dice
     game = color_games.get(uid)
@@ -702,11 +721,12 @@ async def handle_bet(message: types.Message):
         for c in result:
             progressive.append(c["emoji"])
             text = (
-                f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n"
+                f"🎲 *Color Dice* — @{username}\n"
+                f"Твой цвет: {chosen['emoji']} {chosen['name']}\n"
                 f"💰 Ставка: {bet} монет\n\n"
                 f"{' '.join(progressive)}"
             )
-            await msg.edit_text(text)
+            await msg.edit_text(text, parse_mode="Markdown")
             await asyncio.sleep(0.9)
 
         if matches == 1:
@@ -714,7 +734,8 @@ async def handle_bet(message: types.Message):
             cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
             db.commit()
             result_text = (
-                f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n"
+                f"🎲 *Color Dice* — @{username}\n"
+                f"Твой цвет: {chosen['emoji']} {chosen['name']}\n"
                 f"💰 Ставка: {bet} монет\n\n"
                 f"{' '.join(progressive)}\n\n"
                 f"Совпадений: {matches}\n"
@@ -725,7 +746,8 @@ async def handle_bet(message: types.Message):
             cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
             db.commit()
             result_text = (
-                f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n"
+                f"🎲 *Color Dice* — @{username}\n"
+                f"Твой цвет: {chosen['emoji']} {chosen['name']}\n"
                 f"💰 Ставка: {bet} монет\n\n"
                 f"{' '.join(progressive)}\n\n"
                 f"Совпадений: {matches}\n"
@@ -733,13 +755,19 @@ async def handle_bet(message: types.Message):
             )
         else:
             result_text = (
-                f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n"
+                f"🎲 *Color Dice* — @{username}\n"
+                f"Твой цвет: {chosen['emoji']} {chosen['name']}\n"
                 f"💰 Ставка: {bet} монет\n\n"
                 f"{' '.join(progressive)}\n\n"
                 f"Совпадений: {matches}\n"
                 f"❌ *Увы, ты проиграл {bet} монет.*"
             )
-        await msg.edit_text(result_text, parse_mode="Markdown")
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎲 Играть снова", callback_data=f"casino_color_{uid}")],
+            [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
+        ])
+        await msg.edit_text(result_text, reply_markup=kb, parse_mode="Markdown")
         return
 
     # Минёр
@@ -768,7 +796,7 @@ async def handle_bet(message: types.Message):
         }
 
         await message.answer(
-            f"💣 *Минёр*\n"
+            f"💣 *Минёр* — @{username}\n"
             f"💰 Ставка: {bet} монет\n"
             f"🟢 Открыто: 0\n"
             f"📈 Множитель: ×1.0\n"
