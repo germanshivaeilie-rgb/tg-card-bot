@@ -308,7 +308,7 @@ def make_circle_avatar(avatar_img, size, border=8):
         avatar = None
         try:
             photos = await bot.get_user_profile_photos(user_id, limit=1)
-        if photos.total_count > 0:
+            if photos.total_count > 0:
             file_id = photos.photos[0][-1].file_id
             file = await bot.get_file(file_id)
             data = await bot.download_file(file.file_path)
