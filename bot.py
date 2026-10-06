@@ -214,8 +214,6 @@ except sqlite3.OperationalError:
 today = datetime.now().isoformat()
 cur.execute("UPDATE users SET registered_at = ? WHERE registered_at IS NULL", (today,))
 db.commit()
-
-
 def roll_card():
     total = sum(RARITY_CHANCES.values())
     r = random.uniform(0, total)
@@ -302,7 +300,9 @@ def make_circle_avatar(avatar_img, size, border=8):
     ImageDraw.Draw(canvas).ellipse((0, 0, total, total), fill=(255, 255, 255, 255))
     canvas.paste(avatar_img, (border, border), mask)
     return canvas, total
-    async def make_profile_image(user_id, username, balance, place, level, total_cards):
+
+
+async def make_profile_image(user_id, username, balance, place, level, total_cards):
     bg = Image.open(BG_PATH).convert("RGBA")
     w, h = bg.size
     avatar = None
@@ -315,8 +315,10 @@ def make_circle_avatar(avatar_img, size, border=8):
             avatar = Image.open(io.BytesIO(data.read())).convert("RGBA")
     except Exception:
         pass
+    size = int(h * 0.5)
+    if avatar is None:
+        avatar = Image.new("RGBA", (size, size), (60, 60, 80, 255))
     avatar_final, total_size = make_circle_avatar(avatar, size, border=8)
-    avatar_x = int(w * 0.10)
     avatar_x = int(w * 0.10)
     avatar_y = (h - total_size) // 2
     bg.paste(avatar_final, (avatar_x, avatar_y), avatar_final)
@@ -487,9 +489,7 @@ async def color_chosen(call: types.CallbackQuery):
         f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n\n💰 Напиши сумму ставки числом (например 100).\nОтмена — /cancel"
     )
     await call.answer()
-
-
-@dp.callback_query(F.data.startswith("casino_miner_"))
+    @dp.callback_query(F.data.startswith("casino_miner_"))
 async def casino_miner(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
@@ -678,7 +678,8 @@ async def miner_cashout(call: types.CallbackQuery):
         reply_markup=kb, parse_mode="Markdown"
     )
     await call.answer(f"Получено {win}!")
-    # ==== HALLOWEEN ====
+
+
 @dp.message(Command("halloween"))
 async def halloween_menu(message: types.Message):
     uid = message.from_user.id
@@ -756,9 +757,7 @@ async def hw_back(call: types.CallbackQuery):
         except Exception:
             pass
     await call.answer()
-
-
-@dp.callback_query(F.data.startswith("hw_cases_"))
+    @dp.callback_query(F.data.startswith("hw_cases_"))
 async def hw_cases_menu(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
@@ -834,7 +833,6 @@ async def hw_convert_from(call: types.CallbackQuery):
     await call.answer()
 
 
-# ==== КЕЙСЫ ====
 CASE_NAMES = {
     "pumpkin": "🎃 Тыквенный",
     "skeleton": "💀 Скелетный",
@@ -920,7 +918,6 @@ async def hw_open_case(call: types.CallbackQuery):
     await call.answer("🎁 Кейс открыт!")
 
 
-# ==== ХЕЛЛОУИН-БОСС ====
 def boss_round_info(round_num):
     if round_num == 1:
         return 4, 1
@@ -1041,9 +1038,7 @@ async def hw_boss_start(call: types.CallbackQuery):
         except Exception:
             pass
     await call.answer("⚔️ Бой начался!")
-
-
-@dp.callback_query(F.data == "boss_noop")
+    @dp.callback_query(F.data == "boss_noop")
 async def boss_noop(call: types.CallbackQuery):
     await call.answer("Уже открыто.")
 
