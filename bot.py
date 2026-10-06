@@ -214,6 +214,8 @@ except sqlite3.OperationalError:
 today = datetime.now().isoformat()
 cur.execute("UPDATE users SET registered_at = ? WHERE registered_at IS NULL", (today,))
 db.commit()
+
+
 def roll_card():
     total = sum(RARITY_CHANCES.values())
     r = random.uniform(0, total)
@@ -490,8 +492,8 @@ async def color_chosen(call: types.CallbackQuery):
     )
     await call.answer()
 
-    
-    @dp.callback_query(F.data.startswith("casino_miner_"))
+
+@dp.callback_query(F.data.startswith("casino_miner_"))
 async def casino_miner(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
@@ -759,7 +761,9 @@ async def hw_back(call: types.CallbackQuery):
         except Exception:
             pass
     await call.answer()
-    @dp.callback_query(F.data.startswith("hw_cases_"))
+
+
+@dp.callback_query(F.data.startswith("hw_cases_"))
 async def hw_cases_menu(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
@@ -815,7 +819,7 @@ async def hw_convert_to(call: types.CallbackQuery):
         return
     hw_games[uid] = {"state": "wait_amount_to"}
     await call.message.edit_caption(
-        caption="💱 *Монеты → 🍬*\n\nКурс: 100 монет = 10 🍬\n\nНапиши, сколько **монет** обменять (кратно 100).\nПример: `100` → 10 🍬\n\nОтмена — /cancel",
+        caption="💱 *Монеты → 🍬*\n\nКурс: 100 монет = 10 🍬\n\nНапиши, сколько *монет* обменять (кратно 100).\nПример: `100` → 10 🍬\n\nОтмена — /cancel",
         parse_mode="Markdown"
     )
     await call.answer()
@@ -829,7 +833,7 @@ async def hw_convert_from(call: types.CallbackQuery):
         return
     hw_games[uid] = {"state": "wait_amount_from"}
     await call.message.edit_caption(
-        caption="💱 *🍬 → Монеты*\n\nКурс: 10 🍬 = 9 монет (налог 10%)\n\nНапиши, сколько **🍬** обменять (кратно 10).\nПример: `10` → 9 монет\n\nОтмена — /cancel",
+        caption="💱 *🍬 → Монеты*\n\nКурс: 10 🍬 = 9 монет (налог 10%)\n\nНапиши, сколько *🍬* обменять (кратно 10).\nПример: `10` → 9 монет\n\nОтмена — /cancel",
         parse_mode="Markdown"
     )
     await call.answer()
@@ -986,7 +990,7 @@ def boss_build_kb(game):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-@dp.callback_query(F.data.startswith("hw_boss_"))
+@dp.callback_query(F.data.regexp(r"^hw_boss_\d+$"))
 async def hw_boss_start(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
@@ -1040,7 +1044,9 @@ async def hw_boss_start(call: types.CallbackQuery):
         except Exception:
             pass
     await call.answer("⚔️ Бой начался!")
-    @dp.callback_query(F.data == "boss_noop")
+
+
+@dp.callback_query(F.data == "boss_noop")
 async def boss_noop(call: types.CallbackQuery):
     await call.answer("Уже открыто.")
 
@@ -1263,7 +1269,9 @@ async def hw_boss_done(call: types.CallbackQuery):
     except Exception:
         pass
     await call.answer()
-    # ==== /cancel ====
+
+
+# ==== /cancel ====
 @dp.message(Command("cancel"))
 async def cancel_game(message: types.Message):
     uid = message.from_user.id
@@ -1508,7 +1516,7 @@ async def sellall(message: types.Message):
         subtotal = cd["price"] * cnt
         total_sum += subtotal
         text += f"• {name} × {cnt} = {subtotal} монет\n"
-    text += f"\n💵 *Итого: {total_sum} монет*"
+    text += f"\n💵 *Итого: {total_sum} монет*\n\n_Хеллоуинские карточки не продаются через /sellall — используй /sell Название._"
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Да", callback_data="sellall_yes"),
         InlineKeyboardButton(text="❌ Нет", callback_data="sellall_no"),
@@ -1534,7 +1542,7 @@ async def sellall_cb(call: types.CallbackQuery):
         if not cd:
             continue
         total_sum += cd["price"] * cnt
-    cur.execute("DELETE FROM inventory WHERE user_id = ?", (uid,))
+        cur.execute("DELETE FROM inventory WHERE user_id = ? AND card_name = ?", (uid, name))
     cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (total_sum, uid))
     db.commit()
     await call.message.edit_text(f"✅ Продано за {total_sum} монет.")
