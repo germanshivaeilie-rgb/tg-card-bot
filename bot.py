@@ -44,7 +44,6 @@ cards = [
     {"name": "Лучший Израель йегуда",   "rarity": "🌌 Бесконечная", "price": 500000, "file": "ChatGPT Image 5 окт. 2026 г., 15_32_46.png"},
 ]
 
-# ==== ХЕЛЛОУИН КАРТОЧКИ ====
 halloween_cards = {
     "🎃 Тыквенная": [
         {"name": "Огненная Лера",   "price": 250,  "file": "ChatGPT Image 6 окт. 2026 г., 11_30_41.png"},
@@ -213,7 +212,6 @@ def make_circle_avatar(avatar_img, size, border=8):
 async def make_profile_image(user_id, username, balance, place, level, total_cards):
     bg = Image.open(BG_PATH).convert("RGBA")
     w, h = bg.size
-
     avatar = None
     try:
         photos = await bot.get_user_profile_photos(user_id, limit=1)
@@ -224,33 +222,27 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
             avatar = Image.open(io.BytesIO(data.read())).convert("RGBA")
     except Exception:
         pass
-
     size = int(h * 0.5)
     if avatar is None:
         avatar = Image.new("RGBA", (size, size), (60, 60, 80, 255))
-
     avatar_final, total_size = make_circle_avatar(avatar, size, border=8)
     avatar_x = int(w * 0.10)
     avatar_y = (h - total_size) // 2
     bg.paste(avatar_final, (avatar_x, avatar_y), avatar_final)
-
     draw = ImageDraw.Draw(bg)
     try:
         font_big = ImageFont.truetype(FONT_PATH, 72)
         font_mid = ImageFont.truetype(FONT_PATH, 50)
     except Exception:
         font_big = font_mid = ImageFont.load_default()
-
     x = int(w * 0.42)
     y = int(h * 0.18)
     line = int(h * 0.17)
-
     draw.text((x, y), f"@{username or 'Игрок'}", font=font_big, fill="white")
     draw.text((x, y + line), f"Баланс: {balance}", font=font_mid, fill="#FFD700")
     draw.text((x, y + line * 2), f"Уровень: {level}", font=font_mid, fill="#00E5FF")
     draw.text((x, y + line * 3), f"Карт: {total_cards}", font=font_mid, fill="#CCCCCC")
     draw.text((x, y + line * 4), f"Место: #{place}", font=font_mid, fill="#00FF99")
-
     output = io.BytesIO()
     bg.save(output, format="PNG")
     output.seek(0)
@@ -263,63 +255,45 @@ async def start(message: types.Message):
     await message.answer(
         "🎴 Привет! Я бот-коллекционер карточек.\n\n"
         "/card — выбить карточку\n"
-        "/casino — 🎰 Casino (Color Dice + Минёр)\n"
-        "/halloween — 🎃 Хеллоуинский ивент\n"
+        "/casino — 🎰 Casino\n"
+        "/halloween — 🎃 Хеллоуин\n"
         "/mycards — инвентарь\n"
-        "/balance — баланс монет\n"
-        "/sell — продать карточку\n"
+        "/balance — баланс\n"
+        "/sell — продать\n"
         "/sellall — продать всё\n"
         "/upgrade — улучшение\n"
-        "/profile — профиль (можно /profile @username)\n"
-        "/top — топ-3 игрока\n"
+        "/profile — профиль\n"
+        "/top — топ-3\n"
         "/trade @username Название — трейд\n"
-        "/accept, /decline — принять/отклонить"
+        "/accept, /decline — трейд"
     )
-    @dp.message(Command("card"))
+
+
+@dp.message(Command("card"))
 async def card(message: types.Message):
     uid = message.from_user.id
     username = message.from_user.username or "Игрок"
     balance, last, level, _, _ = get_user(uid, message.from_user.username)
-
     if last:
         last_dt = datetime.fromisoformat(last)
         elapsed = datetime.now() - last_dt
         if elapsed < timedelta(minutes=COOLDOWN_MINUTES):
             left = timedelta(minutes=COOLDOWN_MINUTES) - elapsed
-            await message.answer(
-                f"@{username}, ты уже крутил, открой позже.\n"
-                f"⏳ Ждать ещё: {format_cooldown(int(left.total_seconds()))}"
-            )
+            await message.answer(f"@{username}, ты уже крутил, открой позже.\n⏳ Ждать ещё: {format_cooldown(int(left.total_seconds()))}")
             return
-
     cur.execute("UPDATE users SET last_card = ? WHERE user_id = ?", (datetime.now().isoformat(), uid))
     db.commit()
-
     for _ in range(level):
         c = roll_card()
         cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, c["name"]))
         db.commit()
-
         cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? ORDER BY rowid DESC LIMIT 1", (uid, c["name"]))
         inv_id = cur.fetchone()[0]
-
-        caption = (
-            f"@{username}, вам выпала:\n"
-            f"🎴 {c['name']}\n"
-            f"{c['rarity']} | 💰 Цена: {c['price']} монет"
-        )
-
+        caption = f"@{username}, вам выпала:\n🎴 {c['name']}\n{c['rarity']} | 💰 Цена: {c['price']} монет"
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text=f"💰 Продать: {c['name']} ({c['price']})",
-                callback_data=f"sell_card_{inv_id}_{c['price']}"
-            )],
-            [InlineKeyboardButton(
-                text="🎰 Casino",
-                callback_data=f"open_casino_{uid}"
-            )],
+            [InlineKeyboardButton(text=f"💰 Продать: {c['name']} ({c['price']})", callback_data=f"sell_card_{inv_id}_{c['price']}")],
+            [InlineKeyboardButton(text="🎰 Casino", callback_data=f"open_casino_{uid}")],
         ])
-
         photo = FSInputFile(c["file"])
         await message.answer_photo(photo, caption=caption, reply_markup=kb)
 
@@ -330,25 +304,18 @@ async def sell_card_callback(call: types.CallbackQuery):
     inv_id = int(parts[2])
     price = int(parts[3])
     uid = call.from_user.id
-
     cur.execute("SELECT card_name FROM inventory WHERE rowid = ? AND user_id = ?", (inv_id, uid))
     row = cur.fetchone()
     if not row:
-        await call.answer("❌ Эта карточка уже продана.", show_alert=True)
+        await call.answer("❌ Уже продана.", show_alert=True)
         return
-
     cur.execute("DELETE FROM inventory WHERE rowid = ?", (inv_id,))
     cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (price, uid))
     db.commit()
-
-    await call.message.edit_caption(
-        caption=f"✅ Продано: {row[0]} за {price} монет",
-        reply_markup=None
-    )
+    await call.message.edit_caption(caption=f"✅ Продано: {row[0]} за {price} монет", reply_markup=None)
     await call.answer(f"Получено {price} монет!")
 
 
-# ==== CASINO ====
 @dp.message(Command("casino"))
 async def casino_command(message: types.Message):
     uid = message.from_user.id
@@ -358,12 +325,7 @@ async def casino_command(message: types.Message):
         [InlineKeyboardButton(text="💣 Минёр", callback_data=f"casino_miner_{uid}")],
         [InlineKeyboardButton(text="🔙 Закрыть", callback_data=f"casino_close_{uid}")],
     ])
-    await message.answer(
-        f"🎰 *Casino* — @{username}\n\n"
-        f"Выбери игру:",
-        reply_markup=kb,
-        parse_mode="Markdown"
-    )
+    await message.answer(f"🎰 *Casino* — @{username}\n\nВыбери игру:", reply_markup=kb, parse_mode="Markdown")
 
 
 @dp.callback_query(F.data.startswith("open_casino_"))
@@ -378,12 +340,7 @@ async def open_casino(call: types.CallbackQuery):
         [InlineKeyboardButton(text="💣 Минёр", callback_data=f"casino_miner_{uid}")],
         [InlineKeyboardButton(text="🔙 Закрыть", callback_data=f"casino_close_{uid}")],
     ])
-    await call.message.answer(
-        f"🎰 *Casino* — @{username}\n\n"
-        f"Выбери игру:",
-        reply_markup=kb,
-        parse_mode="Markdown"
-    )
+    await call.message.answer(f"🎰 *Casino* — @{username}\n\nВыбери игру:", reply_markup=kb, parse_mode="Markdown")
     await call.answer()
 
 
@@ -391,7 +348,7 @@ async def open_casino(call: types.CallbackQuery):
 async def casino_close(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     try:
         await call.message.delete()
@@ -400,37 +357,25 @@ async def casino_close(call: types.CallbackQuery):
     await call.answer()
 
 
-# ==== COLOR DICE ====
 @dp.callback_query(F.data.startswith("casino_color_"))
 async def casino_color(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🔵 Синий",       callback_data=f"col_blue_{uid}"),
-            InlineKeyboardButton(text="🔴 Красный",     callback_data=f"col_red_{uid}"),
-        ],
-        [
-            InlineKeyboardButton(text="🟡 Жёлтый",      callback_data=f"col_yellow_{uid}"),
-            InlineKeyboardButton(text="🟢 Зелёный",     callback_data=f"col_green_{uid}"),
-        ],
-        [
-            InlineKeyboardButton(text="🟣 Фиолетовый",  callback_data=f"col_purple_{uid}"),
-            InlineKeyboardButton(text="🟠 Оранжевый",   callback_data=f"col_orange_{uid}"),
-        ],
+        [InlineKeyboardButton(text="🔵 Синий", callback_data=f"col_blue_{uid}"),
+         InlineKeyboardButton(text="🔴 Красный", callback_data=f"col_red_{uid}")],
+        [InlineKeyboardButton(text="🟡 Жёлтый", callback_data=f"col_yellow_{uid}"),
+         InlineKeyboardButton(text="🟢 Зелёный", callback_data=f"col_green_{uid}")],
+        [InlineKeyboardButton(text="🟣 Фиолетовый", callback_data=f"col_purple_{uid}"),
+         InlineKeyboardButton(text="🟠 Оранжевый", callback_data=f"col_orange_{uid}")],
     ])
     await call.message.edit_text(
         f"🎲 *Color Dice* — @{username}\n\n"
-        "Правила:\n"
-        "🎉 1 совпадение → выигрыш ×2\n"
-        "🎉 4 совпадения → выигрыш ×4\n"
-        "❌ 0, 2, 3 совпадения → проигрыш\n\n"
-        "Выбери цвет:",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        "Правила:\n🎉 1 совпадение → ×2\n🎉 4 совпадения → ×4\n❌ 0, 2, 3 → проигрыш\n\nВыбери цвет:",
+        reply_markup=kb, parse_mode="Markdown"
     )
     await call.answer()
 
@@ -444,30 +389,25 @@ async def color_chosen(call: types.CallbackQuery):
     code = parts[1]
     uid = int(parts[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоя игра!", show_alert=True)
+        await call.answer("Не твоя игра!", show_alert=True)
         return
-
     chosen = next((c for c in COLORS if c["code"] == code), None)
     if not chosen:
         await call.answer("Ошибка цвета", show_alert=True)
         return
-
     color_games[uid] = {"color": chosen, "state": "wait_bet"}
-
     await call.message.edit_text(
         f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n\n"
-        f"💰 Напиши сумму ставки числом (например 100).\n"
-        f"Отмена — /cancel"
+        f"💰 Напиши сумму ставки числом (например 100).\nОтмена — /cancel"
     )
     await call.answer()
 
 
-# ==== MINER ====
 @dp.callback_query(F.data.startswith("casino_miner_"))
 async def casino_miner(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 Сделать ставку", callback_data=f"miner_bet_{uid}")],
@@ -475,24 +415,10 @@ async def casino_miner(call: types.CallbackQuery):
     ])
     await call.message.edit_text(
         "💣 *Минёр*\n\n"
-        "📋 *Правила:*\n"
-        "• Поле из 9 клеток\n"
-        "• Спрятано 2-6 мин\n"
-        "• Открывай клетки и увеличивай множитель\n"
-        "• Попадёшь на мину — теряешь ставку\n"
-        "• Открыл все безопасные клетки — автоматически получаешь выигрыш\n\n"
-        "📈 *Множители:*\n"
-        "1 клетка → ×1.2\n"
-        "2 клетки → ×1.5\n"
-        "3 клетки → ×2\n"
-        "4 клетки → ×3\n"
-        "5 клеток → ×5\n"
-        "6 клеток → ×8\n"
-        "7 клеток → ×15\n"
-        "8 клеток → ×30\n\n"
-        "🎁 *Особый приз:* открыл все безопасные клетки при 3+ минах — получаешь карточку «Топ 1 Минёр» (💠 Специальная)!",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        "📋 *Правила:*\n• 9 клеток\n• Спрятано 2-6 мин\n• Открывай клетки\n• Попадёшь — теряешь ставку\n• Открыл все безопасные — выигрыш\n\n"
+        "📈 *Множители:*\n1 → ×1.2\n2 → ×1.5\n3 → ×2\n4 → ×3\n5 → ×5\n6 → ×8\n7 → ×15\n8 → ×30\n\n"
+        "🎁 Открыл все безопасные при 3+ минах — карточка «Топ 1 Минёр» (💠)!",
+        reply_markup=kb, parse_mode="Markdown"
     )
     await call.answer()
 
@@ -501,7 +427,7 @@ async def casino_miner(call: types.CallbackQuery):
 async def casino_back(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -509,12 +435,7 @@ async def casino_back(call: types.CallbackQuery):
         [InlineKeyboardButton(text="💣 Минёр", callback_data=f"casino_miner_{uid}")],
         [InlineKeyboardButton(text="🔙 Закрыть", callback_data=f"casino_close_{uid}")],
     ])
-    await call.message.edit_text(
-        f"🎰 *Casino* — @{username}\n\n"
-        f"Выбери игру:",
-        reply_markup=kb,
-        parse_mode="Markdown"
-    )
+    await call.message.edit_text(f"🎰 *Casino* — @{username}\n\nВыбери игру:", reply_markup=kb, parse_mode="Markdown")
     await call.answer()
 
 
@@ -522,13 +443,11 @@ async def casino_back(call: types.CallbackQuery):
 async def miner_bet_request(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     miner_games[uid] = {"state": "wait_bet"}
     await call.message.edit_text(
-        "💣 *Минёр*\n\n"
-        "💰 Напиши сумму ставки числом (например 100).\n"
-        "Отмена — /cancel",
+        "💣 *Минёр*\n\n💰 Напиши сумму ставки числом (например 100).\nОтмена — /cancel",
         parse_mode="Markdown"
     )
     await call.answer()
@@ -564,9 +483,9 @@ async def miner_noop(call: types.CallbackQuery):
     parts = call.data.split("_")
     uid = int(parts[3])
     if call.from_user.id != uid:
-        await call.answer("Это не твоя игра!", show_alert=True)
+        await call.answer("Не твоя игра!", show_alert=True)
         return
-    await call.answer("Эта клетка уже открыта.")
+    await call.answer("Уже открыто.")
 
 
 @dp.callback_query(F.data.startswith("miner_open_"))
@@ -575,19 +494,16 @@ async def miner_open(call: types.CallbackQuery):
     idx = int(parts[2])
     uid = int(parts[3])
     if call.from_user.id != uid:
-        await call.answer("Это не твоя игра!", show_alert=True)
+        await call.answer("Не твоя игра!", show_alert=True)
         return
-
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     game = miner_games.get(uid)
     if not game or game.get("state") != "playing":
         await call.answer("Игра не активна.", show_alert=True)
         return
-
     if idx in game["opened"]:
         await call.answer("Уже открыто.")
         return
-
     if idx in game["mines"]:
         game["state"] = "finished"
         kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -595,86 +511,54 @@ async def miner_open(call: types.CallbackQuery):
             [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
         ])
         await call.message.edit_text(
-            f"💣 *Минёр* — @{username}\n\n"
-            f"💰 Ставка: {game['bet']} монет\n"
-            f"💥 Ты попал на мину!\n\n"
+            f"💣 *Минёр* — @{username}\n\n💰 Ставка: {game['bet']}\n💥 Попал на мину!\n\n"
             f"{' '.join(render_miner_field(game['opened'], game['mines'], reveal_all=True))}\n\n"
-            f"❌ *Ты проиграл {game['bet']} монет.*",
-            reply_markup=kb,
-            parse_mode="Markdown"
+            f"❌ *Проиграл {game['bet']} монет.*",
+            reply_markup=kb, parse_mode="Markdown"
         )
         del miner_games[uid]
         await call.answer("💥 Бум!")
         return
-
     game["opened"].append(idx)
     count = len(game["opened"])
     multiplier = MINER_MULTIPLIERS.get(count, 30.0)
     potential = int(game["bet"] * multiplier)
-
     safe_cells_count = 9 - len(game["mines"])
     all_safe_opened = count >= safe_cells_count
-
     if all_safe_opened:
         game["state"] = "finished"
         win = int(game["bet"] * multiplier)
         cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
-
         special_card = False
         if len(game["mines"]) >= 3:
             cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, "Топ 1 Минёр"))
             special_card = True
-
         db.commit()
-
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎰 Играть снова", callback_data=f"casino_miner_{uid}")],
             [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
         ])
-
         text = (
-            f"💣 *Минёр* — @{username}\n\n"
-            f"💰 Ставка: {game['bet']} монет\n"
-            f"🎉 Ты открыл все безопасные клетки!\n"
-            f"📈 Множитель: ×{multiplier}\n\n"
-            f"{' '.join(render_miner_field(game['opened'], game['mines'], reveal_all=True))}\n\n"
-            f"💰 *Выигрыш: {win} монет!*"
+            f"💣 *Минёр* — @{username}\n\n💰 Ставка: {game['bet']}\n🎉 Все безопасные открыты!\n📈 Множитель: ×{multiplier}\n\n"
+            f"{' '.join(render_miner_field(game['opened'], game['mines'], reveal_all=True))}\n\n💰 *Выигрыш: {win} монет!*"
         )
         if special_card:
-            text += "\n\n💠 *ТЕБЕ ВЫПАЛА СПЕЦИАЛЬНАЯ КАРТОЧКА «Топ 1 Минёр»!*"
-
+            text += "\n\n💠 *ВЫПАЛА КАРТОЧКА «Топ 1 Минёр»!*"
         await call.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-
         if special_card:
             try:
-                card_data = next((c for c in cards if c["name"] == "Топ 1 Минёр"), None)
-                if card_data:
-                    photo = FSInputFile(card_data["file"])
-                    await bot.send_photo(
-                        uid,
-                        photo,
-                        caption=(
-                            f"🎁 *Специальная награда!*\n\n"
-                            f"🎴 {card_data['name']}\n"
-                            f"{card_data['rarity']} | 💰 Цена: {card_data['price']} монет"
-                        ),
-                        parse_mode="Markdown"
-                    )
+                cd = next((c for c in cards if c["name"] == "Топ 1 Минёр"), None)
+                if cd:
+                    photo = FSInputFile(cd["file"])
+                    await bot.send_photo(uid, photo, caption=f"🎁 *Награда!*\n\n🎴 {cd['name']}\n{cd['rarity']} | 💰 {cd['price']}", parse_mode="Markdown")
             except Exception:
                 pass
-
         del miner_games[uid]
         await call.answer("🎉 Победа!")
         return
-
     await call.message.edit_text(
-        f"💣 *Минёр* — @{username}\n"
-        f"💰 Ставка: {game['bet']} монет\n"
-        f"🟢 Открыто: {count}\n"
-        f"📈 Множитель: ×{multiplier}\n"
-        f"💵 Заберёшь: {potential} монет",
-        reply_markup=miner_keyboard(game["opened"], game["mines"], uid),
-        parse_mode="Markdown"
+        f"💣 *Минёр* — @{username}\n💰 Ставка: {game['bet']}\n🟢 Открыто: {count}\n📈 Множитель: ×{multiplier}\n💵 Заберёшь: {potential}",
+        reply_markup=miner_keyboard(game["opened"], game["mines"], uid), parse_mode="Markdown"
     )
     await call.answer(f"Открыто: {count} | ×{multiplier}")
 
@@ -683,68 +567,52 @@ async def miner_open(call: types.CallbackQuery):
 async def miner_cashout(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоя игра!", show_alert=True)
+        await call.answer("Не твоя игра!", show_alert=True)
         return
-
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     game = miner_games.get(uid)
     if not game or game.get("state") != "playing":
         await call.answer("Игра не активна.", show_alert=True)
         return
-
     count = len(game["opened"])
     if count == 0:
-        await call.answer("Сначала открой хотя бы одну клетку!", show_alert=True)
+        await call.answer("Открой хотя бы одну клетку!", show_alert=True)
         return
-
     multiplier = MINER_MULTIPLIERS.get(count, 30.0)
     win = int(game["bet"] * multiplier)
-
     cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
     db.commit()
-
     game["state"] = "finished"
     del miner_games[uid]
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎰 Играть снова", callback_data=f"casino_miner_{uid}")],
         [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
     ])
-
     await call.message.edit_text(
-        f"💣 *Минёр* — @{username}\n\n"
-        f"💰 Ставка: {game['bet']} монет\n"
-        f"🟢 Открыто: {count}\n"
-        f"📈 Множитель: ×{multiplier}\n\n"
-        f"✅ *Ты забрал {win} монет!*",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        f"💣 *Минёр* — @{username}\n\n💰 Ставка: {game['bet']}\n🟢 Открыто: {count}\n📈 Множитель: ×{multiplier}\n\n✅ *Забрал {win} монет!*",
+        reply_markup=kb, parse_mode="Markdown"
     )
-    await call.answer(f"Получено {win} монет!")
-    # ==== ХЕЛЛОУИН ИВЕНТ ====
+    await call.answer(f"Получено {win}!")
+
+
+# ==== HALLOWEEN ====
 @dp.message(Command("halloween"))
 async def halloween_menu(message: types.Message):
     uid = message.from_user.id
     username = message.from_user.username or message.from_user.full_name or "Игрок"
     balance, _, _, _, hw = get_user(uid, message.from_user.username)
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💱 Конвертировать монеты", callback_data=f"hw_conv_{uid}")],
         [InlineKeyboardButton(text="🎃 Тыквенный кейс (1000 🎃)", callback_data=f"hw_pumpkin_{uid}")],
-        [InlineKeyboardButton(text="🔒 Скелетный кейс (скоро)", callback_data=f"hw_soon_{uid}")],
-        [InlineKeyboardButton(text="🔒 Призрачный кейс (скоро)", callback_data=f"hw_soon_{uid}")],
+        [InlineKeyboardButton(text="🔒 Скелетный (скоро)", callback_data=f"hw_soon_{uid}")],
+        [InlineKeyboardButton(text="🔒 Призрачный (скоро)", callback_data=f"hw_soon_{uid}")],
         [InlineKeyboardButton(text="🔙 Закрыть", callback_data=f"hw_close_{uid}")],
     ])
     await message.answer(
         f"🎃 *Хеллоуинский ивент* — @{username}\n\n"
-        f"💰 Обычных монет: {balance}\n"
-        f"🎃 Хеллоуинских монет: {hw}\n\n"
-        f"*Курс:*\n"
-        f"→ 100 монет = 10 🎃\n"
-        f"← 10 🎃 = 9 монет (налог 10%)\n\n"
-        f"Выбери действие:",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        f"💰 Обычных: {balance}\n🎃 Хеллоуинских: {hw}\n\n"
+        f"*Курс:*\n→ 100 монет = 10 🎃\n← 10 🎃 = 9 монет (налог 10%)\n\nВыбери:",
+        reply_markup=kb, parse_mode="Markdown"
     )
 
 
@@ -752,7 +620,7 @@ async def halloween_menu(message: types.Message):
 async def hw_close(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     try:
         await call.message.delete()
@@ -765,36 +633,27 @@ async def hw_close(call: types.CallbackQuery):
 async def hw_soon(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
-    await call.answer("🔒 Скоро откроется!", show_alert=True)
+    await call.answer("🔒 Скоро!", show_alert=True)
 
 
-# ==== КОНВЕРТАЦИЯ ====
 @dp.callback_query(F.data.startswith("hw_conv_"))
 async def hw_convert_menu(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     balance, _, _, _, hw = get_user(uid)
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💱 Монеты → 🎃 (100 = 10)", callback_data=f"hw_to_{uid}")],
         [InlineKeyboardButton(text="💱 🎃 → Монеты (10 = 9)", callback_data=f"hw_from_{uid}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_back_{uid}")],
     ])
     await call.message.edit_text(
-        f"💱 *Конвертация* — @{username}\n\n"
-        f"💰 Обычных: {balance}\n"
-        f"🎃 Хеллоуинских: {hw}\n\n"
-        f"Курс:\n"
-        f"→ 100 монет → 10 🎃\n"
-        f"← 10 🎃 → 9 монет (налог 10%)\n\n"
-        f"Что делаем?",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        f"💱 *Конвертация* — @{username}\n\n💰 Обычных: {balance}\n🎃 Хеллоуинских: {hw}\n\nЧто делаем?",
+        reply_markup=kb, parse_mode="Markdown"
     )
     await call.answer()
 
@@ -803,27 +662,20 @@ async def hw_convert_menu(call: types.CallbackQuery):
 async def hw_back(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     balance, _, _, _, hw = get_user(uid)
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💱 Конвертировать монеты", callback_data=f"hw_conv_{uid}")],
         [InlineKeyboardButton(text="🎃 Тыквенный кейс (1000 🎃)", callback_data=f"hw_pumpkin_{uid}")],
-        [InlineKeyboardButton(text="🔒 Скелетный кейс (скоро)", callback_data=f"hw_soon_{uid}")],
-        [InlineKeyboardButton(text="🔒 Призрачный кейс (скоро)", callback_data=f"hw_soon_{uid}")],
+        [InlineKeyboardButton(text="🔒 Скелетный (скоро)", callback_data=f"hw_soon_{uid}")],
+        [InlineKeyboardButton(text="🔒 Призрачный (скоро)", callback_data=f"hw_soon_{uid}")],
         [InlineKeyboardButton(text="🔙 Закрыть", callback_data=f"hw_close_{uid}")],
     ])
     await call.message.edit_text(
-        f"🎃 *Хеллоуинский ивент* — @{username}\n\n"
-        f"💰 Обычных монет: {balance}\n"
-        f"🎃 Хеллоуинских монет: {hw}\n\n"
-        f"*Курс:*\n"
-        f"→ 100 монет = 10 🎃\n"
-        f"← 10 🎃 = 9 монет (налог 10%)\n\n"
-        f"Выбери действие:",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        f"🎃 *Хеллоуинский ивент* — @{username}\n\n💰 Обычных: {balance}\n🎃 Хеллоуинских: {hw}\n\nВыбери:",
+        reply_markup=kb, parse_mode="Markdown"
     )
     await call.answer()
 
@@ -832,15 +684,11 @@ async def hw_back(call: types.CallbackQuery):
 async def hw_convert_to(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     hw_games[uid] = {"state": "wait_amount_to"}
     await call.message.edit_text(
-        "💱 *Конвертация монет → 🎃*\n\n"
-        "Курс: 100 монет = 10 🎃\n\n"
-        "Напиши, сколько **монет** хочешь обменять (кратно 100).\n"
-        "Пример: `100` → получишь 10 🎃\n\n"
-        "Отмена — /cancel",
+        "💱 *Монеты → 🎃*\n\nКурс: 100 монет = 10 🎃\n\nНапиши, сколько **монет** обменять (кратно 100).\nПример: `100` → 10 🎃\n\nОтмена — /cancel",
         parse_mode="Markdown"
     )
     await call.answer()
@@ -850,45 +698,32 @@ async def hw_convert_to(call: types.CallbackQuery):
 async def hw_convert_from(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     hw_games[uid] = {"state": "wait_amount_from"}
     await call.message.edit_text(
-        "💱 *Конвертация 🎃 → монет*\n\n"
-        "Курс: 10 🎃 = 9 монет (налог 10%)\n\n"
-        "Напиши, сколько **🎃** хочешь обменять (кратно 10).\n"
-        "Пример: `10` → получишь 9 монет\n\n"
-        "Отмена — /cancel",
+        "💱 *🎃 → Монеты*\n\nКурс: 10 🎃 = 9 монет (налог 10%)\n\nНапиши, сколько **🎃** обменять (кратно 10).\nПример: `10` → 9 монет\n\nОтмена — /cancel",
         parse_mode="Markdown"
     )
     await call.answer()
 
 
-# ==== ТЫКВЕННЫЙ КЕЙС ====
 @dp.callback_query(F.data.startswith("hw_pumpkin_"))
 async def hw_pumpkin_case(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     balance, _, _, _, hw = get_user(uid)
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"🎃 Открыть за {PUMPKIN_CASE_PRICE} 🎃", callback_data=f"hw_open_pumpkin_{uid}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_back_{uid}")],
     ])
     await call.message.edit_text(
-        f"🎃 *Тыквенный кейс* — @{username}\n\n"
-        f"💰 Цена: {PUMPKIN_CASE_PRICE} 🎃\n"
-        f"🎃 У тебя: {hw}\n\n"
-        f"*Что выпадает:*\n"
-        f"🎃 Тыквенная — 70%\n"
-        f"👻 Призрачная — 25%\n"
-        f"🧙 Ведьминская — 4%\n"
-        f"🧛 Вампирская — 1%",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        f"🎃 *Тыквенный кейс* — @{username}\n\n💰 Цена: {PUMPKIN_CASE_PRICE} 🎃\n🎃 У тебя: {hw}\n\n"
+        f"*Что выпадает:*\n🎃 Тыквенная — 70%\n👻 Призрачная — 25%\n🧙 Ведьминская — 4%\n🧛 Вампирская — 1%",
+        reply_markup=kb, parse_mode="Markdown"
     )
     await call.answer()
 
@@ -897,58 +732,39 @@ async def hw_pumpkin_case(call: types.CallbackQuery):
 async def hw_open_pumpkin(call: types.CallbackQuery):
     uid = int(call.data.split("_")[3])
     if call.from_user.id != uid:
-        await call.answer("Это не твоё меню!", show_alert=True)
+        await call.answer("Не твоё меню!", show_alert=True)
         return
-
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     balance, _, _, _, hw = get_user(uid)
-
     if hw < PUMPKIN_CASE_PRICE:
         await call.answer(f"❌ Нужно {PUMPKIN_CASE_PRICE} 🎃, у тебя {hw}", show_alert=True)
         return
-
-    # Списываем
     cur.execute("UPDATE users SET hw_balance = hw_balance - ? WHERE user_id = ?", (PUMPKIN_CASE_PRICE, uid))
     db.commit()
-
-    # Крутим
     card, rarity = roll_halloween_card()
-
-    # Добавляем в инвентарь
     cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, card["name"]))
     db.commit()
-
-    # Пересчитываем баланс
     new_hw = hw - PUMPKIN_CASE_PRICE
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎃 Открыть ещё", callback_data=f"hw_open_pumpkin_{uid}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_back_{uid}")],
     ])
-
     try:
         photo = FSInputFile(card["file"])
         caption = (
-            f"🎃 *Тыквенный кейс* — @{username}\n\n"
-            f"🎉 Тебе выпала карточка!\n\n"
-            f"🎴 *{card['name']}*\n"
-            f"Редкость: {rarity}\n"
-            f"💰 Цена: {card['price']} 🎃\n\n"
-            f"🎃 Осталось: {new_hw}"
+            f"🎃 *Тыквенный кейс* — @{username}\n\n🎉 Тебе выпала карточка!\n\n"
+            f"🎴 *{card['name']}*\nРедкость: {rarity}\n💰 Цена: {card['price']} 🎃\n\n🎃 Осталось: {new_hw}"
         )
         await call.message.delete()
         await call.message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
     except Exception:
         await call.message.edit_text(
-            f"🎉 Тебе выпала: *{card['name']}* ({rarity}, {card['price']} 🎃)\n"
-            f"🎃 Осталось: {new_hw}",
-            reply_markup=kb,
-            parse_mode="Markdown"
+            f"🎉 Выпала: *{card['name']}* ({rarity}, {card['price']} 🎃)\n🎃 Осталось: {new_hw}",
+            reply_markup=kb, parse_mode="Markdown"
         )
     await call.answer("🎃 Кейс открыт!")
 
 
-# ==== /cancel ====
 @dp.message(Command("cancel"))
 async def cancel_game(message: types.Message):
     uid = message.from_user.id
@@ -963,44 +779,37 @@ async def cancel_game(message: types.Message):
         del hw_games[uid]
         cancelled = True
     if cancelled:
-        await message.answer("❌ Действие отменено.")
+        await message.answer("❌ Отменено.")
     else:
-        await message.answer("У тебя нет активного действия.")
+        await message.answer("Нет активного действия.")
 
 
-# ==== Ввод ставки / суммы (число) ====
 @dp.message(F.text.regexp(r"^\d+$"))
 async def handle_bet(message: types.Message):
     uid = message.from_user.id
     username = message.from_user.username or message.from_user.full_name or "Игрок"
 
-    # Хеллоуин конвертация
     hw_game = hw_games.get(uid)
     if hw_game and hw_game.get("state") == "wait_amount_to":
         amount = int(message.text)
         if amount <= 0 or amount % 100 != 0:
-            await message.answer("❌ Сумма должна быть кратна 100 (например 100, 500, 1000).")
+            await message.answer("❌ Сумма кратна 100 (100, 500, 1000).")
             return
         balance, _, _, _, hw = get_user(uid, message.from_user.username)
         if balance < amount:
-            await message.answer(f"❌ Не хватает монет. У тебя {balance}, нужно {amount}.")
+            await message.answer(f"❌ Не хватает. У тебя {balance}, нужно {amount}.")
             return
         hw_get = amount // 10
         cur.execute("UPDATE users SET balance = balance - ?, hw_balance = hw_balance + ? WHERE user_id = ?", (amount, hw_get, uid))
         db.commit()
         del hw_games[uid]
-        await message.answer(
-            f"✅ Обменяно!\n\n"
-            f"💰 -{amount} монет\n"
-            f"🎃 +{hw_get} хеллоуинских",
-            parse_mode="Markdown"
-        )
+        await message.answer(f"✅ Обмен!\n💰 -{amount} монет\n🎃 +{hw_get}")
         return
 
     if hw_game and hw_game.get("state") == "wait_amount_from":
         amount = int(message.text)
         if amount <= 0 or amount % 10 != 0:
-            await message.answer("❌ Количество должно быть кратно 10 (например 10, 50, 100).")
+            await message.answer("❌ Кратно 10 (10, 50, 100).")
             return
         balance, _, _, _, hw = get_user(uid, message.from_user.username)
         if hw < amount:
@@ -1010,122 +819,360 @@ async def handle_bet(message: types.Message):
         cur.execute("UPDATE users SET hw_balance = hw_balance - ?, balance = balance + ? WHERE user_id = ?", (amount, money_get, uid))
         db.commit()
         del hw_games[uid]
-        await message.answer(
-            f"✅ Обменяно!\n\n"
-            f"🎃 -{amount} хеллоуинских\n"
-            f"💰 +{money_get} монет (налог 10%)",
-            parse_mode="Markdown"
-        )
+        await message.answer(f"✅ Обмен!\n🎃 -{amount}\n💰 +{money_get} (налог 10%)")
         return
 
-    # Color Dice
     game = color_games.get(uid)
     if game and game.get("state") == "wait_bet":
         bet = int(message.text)
         if bet <= 0:
-            await message.answer("❌ Ставка должна быть больше 0.")
+            await message.answer("❌ Ставка > 0.")
             return
         balance, _, _, _, _ = get_user(uid, message.from_user.username)
         if balance < bet:
-            await message.answer(f"❌ Не хватает монет. У тебя {balance}, нужно {bet}.")
+            await message.answer(f"❌ Не хватает. У тебя {balance}, нужно {bet}.")
             return
         cur.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (bet, uid))
         db.commit()
-
         chosen = game["color"]
         del color_games[uid]
-
         result = [random.choice(COLORS) for _ in range(4)]
         matches = sum(1 for c in result if c["code"] == chosen["code"])
-
         msg = await message.answer(f"🎲 Крутим...\n\n{chosen['emoji']}")
         await asyncio.sleep(0.9)
-
         progressive = []
         for c in result:
             progressive.append(c["emoji"])
-            text = (
-                f"🎲 *Color Dice* — @{username}\n"
-                f"Твой цвет: {chosen['emoji']} {chosen['name']}\n"
-                f"💰 Ставка: {bet} монет\n\n"
-                f"{' '.join(progressive)}"
-            )
+            text = f"🎲 *Color Dice* — @{username}\nТвой цвет: {chosen['emoji']} {chosen['name']}\n💰 Ставка: {bet}\n\n{' '.join(progressive)}"
             await msg.edit_text(text, parse_mode="Markdown")
             await asyncio.sleep(0.9)
-
         if matches == 1:
             win = bet * 2
             cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
             db.commit()
-            result_text = (
-                f"🎲 *Color Dice* — @{username}\n"
-                f"Твой цвет: {chosen['emoji']} {chosen['name']}\n"
-                f"💰 Ставка: {bet} монет\n\n"
-                f"{' '.join(progressive)}\n\n"
-                f"Совпадений: {matches}\n"
-                f"🎉 *Поздравляю, ты выиграл {win} монет!* (×2)"
-            )
+            rt = f"🎲 *Color Dice* — @{username}\nТвой цвет: {chosen['emoji']} {chosen['name']}\n💰 Ставка: {bet}\n\n{' '.join(progressive)}\n\nСовпадений: {matches}\n🎉 *Выиграл {win} монет!* (×2)"
         elif matches == 4:
             win = bet * 4
             cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
             db.commit()
-            result_text = (
-                f"🎲 *Color Dice* — @{username}\n"
-                f"Твой цвет: {chosen['emoji']} {chosen['name']}\n"
-                f"💰 Ставка: {bet} монет\n\n"
-                f"{' '.join(progressive)}\n\n"
-                f"Совпадений: {matches}\n"
-                f"🎉 *ДЖЕКПОТ! Ты выиграл {win} монет!* (×4)"
-            )
+            rt = f"🎲 *Color Dice* — @{username}\nТвой цвет: {chosen['emoji']} {chosen['name']}\n💰 Ставка: {bet}\n\n{' '.join(progressive)}\n\nСовпадений: {matches}\n🎉 *ДЖЕКПОТ! +{win}!* (×4)"
         else:
-            result_text = (
-                f"🎲 *Color Dice* — @{username}\n"
-                f"Твой цвет: {chosen['emoji']} {chosen['name']}\n"
-                f"💰 Ставка: {bet} монет\n\n"
-                f"{' '.join(progressive)}\n\n"
-                f"Совпадений: {matches}\n"
-                f"❌ *Увы, ты проиграл {bet} монет.*"
-            )
-
+            rt = f"🎲 *Color Dice* — @{username}\nТвой цвет: {chosen['emoji']} {chosen['name']}\n💰 Ставка: {bet}\n\n{' '.join(progressive)}\n\nСовпадений: {matches}\n❌ *Проиграл {bet} монет.*"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎲 Играть снова", callback_data=f"casino_color_{uid}")],
             [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
         ])
-        await msg.edit_text(result_text, reply_markup=kb, parse_mode="Markdown")
+        await msg.edit_text(rt, reply_markup=kb, parse_mode="Markdown")
         return
 
-    # Минёр
     game = miner_games.get(uid)
     if game and game.get("state") == "wait_bet":
         bet = int(message.text)
         if bet <= 0:
-            await message.answer("❌ Ставка должна быть больше 0.")
+            await message.answer("❌ Ставка > 0.")
             return
         balance, _, _, _, _ = get_user(uid, message.from_user.username)
         if balance < bet:
-            await message.answer(f"❌ Не хватает монет. У тебя {balance}, нужно {bet}.")
+            await message.answer(f"❌ Не хватает. У тебя {balance}, нужно {bet}.")
             return
-
         cur.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (bet, uid))
         db.commit()
-
         mines_count = random.randint(2, 6)
         mines_set = set(random.sample(range(9), mines_count))
-
-        miner_games[uid] = {
-            "state": "playing",
-            "bet": bet,
-            "mines": mines_set,
-            "opened": [],
-        }
-
+        miner_games[uid] = {"state": "playing", "bet": bet, "mines": mines_set, "opened": []}
         await message.answer(
-            f"💣 *Минёр* — @{username}\n"
-            f"💰 Ставка: {bet} монет\n"
-            f"🟢 Открыто: 0\n"
-            f"📈 Множитель: ×1.0\n"
-            f"💵 Заберёшь: {bet} монет",
-            reply_markup=miner_keyboard([], mines_set, uid),
-            parse_mode="Markdown"
+            f"💣 *Минёр* — @{username}\n💰 Ставка: {bet}\n🟢 Открыто: 0\n📈 Множитель: ×1.0\n💵 Заберёшь: {bet}",
+            reply_markup=miner_keyboard([], mines_set, uid), parse_mode="Markdown"
         )
         return
+
+
+@dp.message(Command("mycards"))
+async def mycards(message: types.Message):
+    uid = message.from_user.id
+    cur.execute("SELECT card_name FROM inventory WHERE user_id = ?", (uid,))
+    rows = cur.fetchall()
+    if not rows:
+        await message.answer("Пусто. Напиши /card")
+        return
+    counts = {}
+    for (name,) in rows:
+        counts[name] = counts.get(name, 0) + 1
+    text = "🎒 *Инвентарь:*\n\n"
+    for name, cnt in counts.items():
+        text += f"• {name} × {cnt}\n"
+    await message.answer(text, parse_mode="Markdown")
+
+
+@dp.message(Command("balance"))
+async def balance_cmd(message: types.Message):
+    balance, _, _, _, hw = get_user(message.from_user.id, message.from_user.username)
+    await message.answer(f"💰 Обычных: {balance}\n🎃 Хеллоуинских: {hw}")
+
+
+@dp.message(Command("profile"))
+async def profile(message: types.Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) > 1:
+        tu = args[1].lstrip("@").strip()
+        cur.execute("SELECT user_id, username, balance, level, registered_at FROM users WHERE username = ?", (tu,))
+        row = cur.fetchone()
+        if not row:
+            await message.answer(f"❌ @{tu} не найден.")
+            return
+        tid, tun, balance, level, reg = row
+    else:
+        tid = message.from_user.id
+        tun = message.from_user.username
+        balance, _, level, reg, _ = get_user(tid, tun)
+    cur.execute("SELECT COUNT(*) FROM inventory WHERE user_id = ?", (tid,))
+    total = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE balance > ?", (balance,))
+    place = cur.fetchone()[0] + 1
+    date_str = format_date_ru(reg)
+    caption = (
+        f"👤 Это пользователь @{tun or 'Игрок'}\n📅 С {date_str}\n\n"
+        f"💰 Баланс: {balance} монет\n🏆 Место в топе: #{place}\n🎴 Карточек: {total}"
+    )
+    try:
+        img = await make_profile_image(tid, tun, balance, place, level, total)
+        photo = BufferedInputFile(img.read(), filename="profile.png")
+        await message.answer_photo(photo, caption=caption)
+    except Exception as e:
+        await message.answer(caption + f"\n\n_Ошибка: {e}_", parse_mode="Markdown")
+
+
+@dp.message(Command("top"))
+async def top(message: types.Message):
+    cur.execute("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 3")
+    rows = cur.fetchall()
+    if not rows:
+        await message.answer("Пока никто.")
+        return
+    medals = ["🥇", "🥈", "🥉"]
+    text = "🏆 *Топ-3:*\n\n"
+    for i, (uname, bal) in enumerate(rows):
+        name = f"@{uname}" if uname else f"Игрок #{i+1}"
+        text += f"{medals[i]} *{name}*\n      💰 {bal} монет\n\n"
+    await message.answer(text, parse_mode="Markdown")
+
+
+@dp.message(Command("sell"))
+async def sell(message: types.Message):
+    uid = message.from_user.id
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Использование: /sell Название")
+        return
+    name = args[1].strip()
+    cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? LIMIT 1", (uid, name))
+    row = cur.fetchone()
+    if not row:
+        await message.answer("❌ Нет такой карточки.")
+        return
+    hw_card = None
+    for rarity, lst in halloween_cards.items():
+        for c in lst:
+            if c["name"].lower() == name.lower():
+                hw_card = c
+                break
+        if hw_card:
+            break
+    card_data = next((c for c in cards if c["name"].lower() == name.lower()), None)
+    if hw_card:
+        cur.execute("DELETE FROM inventory WHERE rowid = ?", (row[0],))
+        cur.execute("UPDATE users SET hw_balance = hw_balance + ? WHERE user_id = ?", (hw_card["price"], uid))
+        db.commit()
+        await message.answer(f"✅ Продано: {hw_card['name']} за {hw_card['price']} 🎃")
+        return
+    if not card_data:
+        await message.answer("❌ Неизвестная.")
+        return
+    cur.execute("DELETE FROM inventory WHERE rowid = ?", (row[0],))
+    cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (card_data["price"], uid))
+    db.commit()
+    await message.answer(f"✅ Продано: {card_data['name']} за {card_data['price']} монет")
+
+
+@dp.message(Command("sellall"))
+async def sellall(message: types.Message):
+    uid = message.from_user.id
+    cur.execute("SELECT card_name, COUNT(*) FROM inventory WHERE user_id = ? GROUP BY card_name", (uid,))
+    rows = cur.fetchall()
+    if not rows:
+        await message.answer("❌ Нет карточек.")
+        return
+    total_sum = 0
+    text = "💰 *Будет продано:*\n\n"
+    for name, cnt in rows:
+        cd = next((c for c in cards if c["name"] == name), None)
+        if not cd:
+            continue
+        subtotal = cd["price"] * cnt
+        total_sum += subtotal
+        text += f"• {name} × {cnt} = {subtotal} монет\n"
+    text += f"\n💵 *Итого: {total_sum} монет*"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Да", callback_data="sellall_yes"),
+        InlineKeyboardButton(text="❌ Нет", callback_data="sellall_no"),
+    ]])
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+
+@dp.callback_query(F.data.startswith("sellall_"))
+async def sellall_cb(call: types.CallbackQuery):
+    uid = call.from_user.id
+    if call.data == "sellall_no":
+        await call.message.edit_text("❌ Отменено.")
+        await call.answer()
+        return
+    cur.execute("SELECT card_name, COUNT(*) FROM inventory WHERE user_id = ? GROUP BY card_name", (uid,))
+    rows = cur.fetchall()
+    if not rows:
+        await call.answer("Пусто!", show_alert=True)
+        return
+    total_sum = 0
+    for name, cnt in rows:
+        cd = next((c for c in cards if c["name"] == name), None)
+        if not cd:
+            continue
+        total_sum += cd["price"] * cnt
+    cur.execute("DELETE FROM inventory WHERE user_id = ?", (uid,))
+    cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (total_sum, uid))
+    db.commit()
+    await call.message.edit_text(f"✅ Продано за {total_sum} монет.")
+    await call.answer("Готово!")
+
+
+@dp.message(Command("upgrade"))
+async def upgrade(message: types.Message):
+    uid = message.from_user.id
+    balance, _, level, _, _ = get_user(uid, message.from_user.username)
+    if level >= MAX_LEVEL:
+        await message.answer("⛔ Максимум 3.")
+        return
+    nl = level + 1
+    price = UPGRADE_PRICES[nl]
+    if balance < price:
+        await message.answer(f"❌ Нужно {price}, у тебя {balance}.")
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Да", callback_data=f"upg_yes_{nl}"),
+        InlineKeyboardButton(text="❌ Нет", callback_data="upg_no"),
+    ]])
+    await message.answer(
+        f"⬆️ *Улучшение до ур. {nl}*\n\nБудет выдавать {nl} карты за /card\n\n💰 Цена: {price}\n💳 У тебя: {balance}",
+        reply_markup=kb, parse_mode="Markdown"
+    )
+
+
+@dp.callback_query(F.data.startswith("upg_"))
+async def upg_cb(call: types.CallbackQuery):
+    uid = call.from_user.id
+    balance, _, level, _, _ = get_user(uid, call.from_user.username)
+    if call.data == "upg_no":
+        await call.message.edit_text("❌ Отменено.")
+        await call.answer()
+        return
+    nl = int(call.data.split("_")[2])
+    price = UPGRADE_PRICES[nl]
+    if level >= nl:
+        await call.answer("Уже куплено!", show_alert=True)
+        return
+    if balance < price:
+        await call.answer("Недостаточно монет!", show_alert=True)
+        return
+    cur.execute("UPDATE users SET balance = balance - ?, level = ? WHERE user_id = ?", (price, nl, uid))
+    db.commit()
+    await call.message.edit_text(f"✅ Улучшение! Теперь уровень {nl}.")
+    await call.answer("Активировано!")
+
+
+@dp.message(Command("trade"))
+async def trade(message: types.Message):
+    uid = message.from_user.id
+    sn = message.from_user.username or message.from_user.full_name
+    args = message.text.split(maxsplit=2)
+    if len(args) < 3:
+        await message.answer("Использование: /trade @username Название")
+        return
+    tu = args[1].lstrip("@")
+    cn = args[2].strip()
+    cur.execute("SELECT user_id, username FROM users WHERE username = ?", (tu,))
+    row = cur.fetchone()
+    if not row:
+        await message.answer("❌ Не найден.")
+        return
+    tid, tun = row
+    if tid == uid:
+        await message.answer("❌ Себе нельзя.")
+        return
+    cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? LIMIT 1", (uid, cn))
+    if not cur.fetchone():
+        await message.answer(f"❌ Нет карточки «{cn}».")
+        return
+    cur.execute("INSERT INTO trades (from_id, to_id, card_name) VALUES (?, ?, ?)", (uid, tid, cn))
+    db.commit()
+    await message.answer(f"✅ Отправлено @{tun}.")
+    try:
+        await bot.send_message(
+            tid,
+            f"🤝 *Трейд!*\n\n👤 От: @{sn}\n🎴 *{cn}*\n\n/accept — принять\n/decline — отклонить",
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
+
+
+@dp.message(Command("accept"))
+async def accept(message: types.Message):
+    uid = message.from_user.id
+    an = message.from_user.username or message.from_user.full_name
+    cur.execute("SELECT rowid, from_id, card_name FROM trades WHERE to_id = ? ORDER BY rowid DESC LIMIT 1", (uid,))
+    row = cur.fetchone()
+    if not row:
+        await message.answer("❌ Нет предложений.")
+        return
+    rowid, fid, cn = row
+    cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? LIMIT 1", (fid, cn))
+    src = cur.fetchone()
+    if not src:
+        cur.execute("DELETE FROM trades WHERE rowid = ?", (rowid,))
+        db.commit()
+        await message.answer("❌ У отправителя нет карточки.")
+        return
+    cur.execute("DELETE FROM inventory WHERE rowid = ?", (src[0],))
+    cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, cn))
+    cur.execute("DELETE FROM trades WHERE rowid = ?", (rowid,))
+    db.commit()
+    await message.answer(f"✅ Принял *{cn}*.", parse_mode="Markdown")
+    try:
+        await bot.send_message(fid, f"✅ *Трейд принят!*\n\n👤 @{an} принял *{cn}*.", parse_mode="Markdown")
+    except Exception:
+        pass
+
+
+@dp.message(Command("decline"))
+async def decline(message: types.Message):
+    uid = message.from_user.id
+    dn = message.from_user.username or message.from_user.full_name
+    cur.execute("SELECT rowid, from_id, card_name FROM trades WHERE to_id = ? ORDER BY rowid DESC LIMIT 1", (uid,))
+    row = cur.fetchone()
+    if not row:
+        await message.answer("❌ Нет предложений.")
+        return
+    rowid, fid, cn = row
+    cur.execute("DELETE FROM trades WHERE rowid = ?", (rowid,))
+    db.commit()
+    await message.answer(f"❌ Отклонил *{cn}*.", parse_mode="Markdown")
+    try:
+        await bot.send_message(fid, f"❌ *Трейд отклонён.*\n\n👤 @{dn} отказался от *{cn}*.", parse_mode="Markdown")
+    except Exception:
+        pass
+
+
+async def main():
+    await dp.start_polling(bot)
+
+
+asyncio.run(main())
