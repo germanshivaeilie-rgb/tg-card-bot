@@ -345,6 +345,8 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
     bg.save(output, format="PNG")
     output.seek(0)
     return output
+
+
    @dp.message(Command("start"))
 async def start(message: types.Message):
     get_user(message.from_user.id, message.from_user.username)
