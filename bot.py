@@ -489,6 +489,8 @@ async def color_chosen(call: types.CallbackQuery):
         f"🎲 Твой цвет: {chosen['emoji']} {chosen['name']}\n\n💰 Напиши сумму ставки числом (например 100).\nОтмена — /cancel"
     )
     await call.answer()
+
+    
     @dp.callback_query(F.data.startswith("casino_miner_"))
 async def casino_miner(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
