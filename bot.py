@@ -17,6 +17,7 @@ FONT_PATH = "Roboto-Italic-VariableFont_wdth,wght.ttf"
 BG_PATH = "ChatGPT Image 5 окт. 2026 г., 09_26_45.png"
 BOSS_ALIVE = "ChatGPT Image 6 окт. 2026 г., 12_17_38.png"
 BOSS_DEAD = "ChatGPT Image 6 окт. 2026 г., 12_19_03.png"
+HW_BANNER = "ChatGPT Image 6 окт. 2026 г., 11_12_35.png"
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
@@ -47,36 +48,105 @@ cards = [
     {"name": "Хеллоуинский босс",       "rarity": "💠 Специальная", "price": 100000, "file": "ChatGPT Image 6 окт. 2026 г., 12_19_03.png"},
 ]
 
-halloween_cards = {
-    "🎃 Тыквенная": [
-        {"name": "Огненная Лера",   "price": 250,  "file": "ChatGPT Image 6 окт. 2026 г., 11_30_41.png"},
-        {"name": "Пожиратель тыкв", "price": 500,  "file": "ChatGPT Image 6 окт. 2026 г., 11_26_06.png"},
-        {"name": "Нора с тыквами",  "price": 1000, "file": "ChatGPT Image 6 окт. 2026 г., 11_19_50.png"},
-    ],
-    "👻 Призрачная": [
-        {"name": "Призрачный рубрик", "price": 1500, "file": "ChatGPT Image 6 окт. 2026 г., 11_23_00.png"},
-    ],
-    "🧙 Ведьминская": [
-        {"name": "Ведьминский Еля", "price": 10000, "file": "ChatGPT Image 6 окт. 2026 г., 11_16_21.png"},
-    ],
-    "🧛 Вампирская": [
-        {"name": "Вампирский хлеб", "price": 50000, "file": "ChatGPT Image 6 окт. 2026 г., 10_48_44.png"},
-    ],
+# Хеллоуинские карточки по кейсам
+HW_CARDS = {
+    "pumpkin": {  # Тыквенный кейс
+        "🎃 Тыквенная": [
+            {"name": "Огненная Лера",   "price": 250,  "file": "ChatGPT Image 6 окт. 2026 г., 11_30_41.png"},
+            {"name": "Пожиратель тыкв", "price": 500,  "file": "ChatGPT Image 6 окт. 2026 г., 11_26_06.png"},
+            {"name": "Нора с тыквами",  "price": 1000, "file": "ChatGPT Image 6 окт. 2026 г., 11_19_50.png"},
+        ],
+        "👻 Призрачная": [
+            {"name": "Призрачный рубрик", "price": 1500, "file": "ChatGPT Image 6 окт. 2026 г., 11_23_00.png"},
+        ],
+        "🧙 Ведьминская": [
+            {"name": "Ведьминский Еля", "price": 10000, "file": "ChatGPT Image 6 окт. 2026 г., 11_16_21.png"},
+        ],
+        "🧛 Вампирская": [
+            {"name": "Вампирский хлеб", "price": 20000, "file": "ChatGPT Image 6 окт. 2026 г., 10_48_44.png"},
+        ],
+    },
+    "skeleton": {  # Скелетный кейс
+        "👻 Призрачная": [
+            {"name": "Призрачный рубрик", "price": 1500, "file": "ChatGPT Image 6 окт. 2026 г., 11_23_00.png"},
+            {"name": "Котакбас",          "price": 3000, "file": "ChatGPT Image 6 окт. 2026 г., 14_07_30.png"},
+            {"name": "Призрак заез",      "price": 5000, "file": "ChatGPT Image 6 окт. 2026 г., 14_10_39.png"},
+        ],
+        "🧙 Ведьминская": [
+            {"name": "Ведьминский Еля",   "price": 10000, "file": "ChatGPT Image 6 окт. 2026 г., 11_16_21.png"},
+            {"name": "Ведьминская кошка", "price": 15000, "file": "ChatGPT Image 6 окт. 2026 г., 14_03_47.png"},
+            {"name": "Ведьма неля",       "price": 17000, "file": "ChatGPT Image 6 окт. 2026 г., 14_23_18.png"},
+        ],
+        "🧛 Вампирская": [
+            {"name": "Вампирский хлеб",                 "price": 20000, "file": "ChatGPT Image 6 окт. 2026 г., 10_48_44.png"},
+            {"name": "А хотелось бы ведьминский жезл",  "price": 25000, "file": "ChatGPT Image 6 окт. 2026 г., 14_28_54.png"},
+        ],
+        "💀 Скелетная": [
+            {"name": "Костяной Губка боб",       "price": 30000, "file": "ChatGPT Image 6 окт. 2026 г., 14_36_53.png"},
+            {"name": "Костяной Литвин x Спид",   "price": 40000, "file": "ChatGPT Image 6 окт. 2026 г., 14_42_20.png"},
+        ],
+        "😈 Демоническая": [
+            {"name": "Коллекционер душ", "price": 100000, "file": "ChatGPT Image 6 окт. 2026 г., 14_45_53.png"},
+        ],
+    },
+    "ghost": {  # Призрачный кейс
+        "🧙 Ведьминская": [
+            {"name": "Ведьминский Еля",   "price": 10000, "file": "ChatGPT Image 6 окт. 2026 г., 11_16_21.png"},
+            {"name": "Ведьминская кошка", "price": 15000, "file": "ChatGPT Image 6 окт. 2026 г., 14_03_47.png"},
+            {"name": "Ведьма неля",       "price": 17000, "file": "ChatGPT Image 6 окт. 2026 г., 14_23_18.png"},
+        ],
+        "🧛 Вампирская": [
+            {"name": "Вампирский хлеб",                 "price": 20000, "file": "ChatGPT Image 6 окт. 2026 г., 10_48_44.png"},
+            {"name": "А хотелось бы ведьминский жезл",  "price": 25000, "file": "ChatGPT Image 6 окт. 2026 г., 14_28_54.png"},
+        ],
+        "💀 Скелетная": [
+            {"name": "Костяной Губка боб",       "price": 30000, "file": "ChatGPT Image 6 окт. 2026 г., 14_36_53.png"},
+            {"name": "Костяной Литвин x Спид",   "price": 40000, "file": "ChatGPT Image 6 окт. 2026 г., 14_42_20.png"},
+        ],
+        "😈 Демоническая": [
+            {"name": "Коллекционер душ", "price": 100000, "file": "ChatGPT Image 6 окт. 2026 г., 14_45_53.png"},
+        ],
+        "😱 Кошмарная": [
+            {"name": "Кошмарный Moggfone", "price": 500000, "file": "ChatGPT Image 6 окт. 2026 г., 15_28_10.png"},
+        ],
+    },
 }
 
-PUMPKIN_CASE_CHANCES = {
-    "🎃 Тыквенная": 70,
-    "👻 Призрачная": 25,
-    "🧙 Ведьминская": 4,
-    "🧛 Вампирская": 1,
+# Шансы по кейсам
+CASE_CHANCES = {
+    "pumpkin": {  # Тыквенный
+        "🎃 Тыквенная": 70,
+        "👻 Призрачная": 25,
+        "🧙 Ведьминская": 4,
+        "🧛 Вампирская": 1,
+    },
+    "skeleton": {  # Скелетный
+        "👻 Призрачная": 35,
+        "🧙 Ведьминская": 25,
+        "🧛 Вампирская": 20,
+        "💀 Скелетная": 15,
+        "😈 Демоническая": 5,
+    },
+    "ghost": {  # Призрачный
+        "🧙 Ведьминская": 40,
+        "🧛 Вампирская": 30,
+        "💀 Скелетная": 18,
+        "😈 Демоническая": 11.334,
+        "😱 Кошмарная": 0.666,
+    },
 }
 
-PUMPKIN_CASE_PRICE = 1000
+CASE_PRICES = {
+    "pumpkin": 1000,
+    "skeleton": 10000,
+    "ghost": 100000,
+}
+
 HALLOWEEN_RATE_TO = 10
 HALLOWEEN_RATE_BACK = 0.9
 
 BOSS_MAX_HP = 100
-PLAYER_MAX_HP = 30
+PLAYER_MAX_HP = 100
 BOSS_DAMAGE = 10
 PLAYER_DAMAGE = 10
 BOSS_ATTACK_EVERY = 3
@@ -164,20 +234,32 @@ def roll_card():
     return random.choice(pool)
 
 
-def roll_halloween_card():
-    total = sum(PUMPKIN_CASE_CHANCES.values())
+def roll_hw_card(case_type):
+    chances = CASE_CHANCES[case_type]
+    cards_pool = HW_CARDS[case_type]
+    total = sum(chances.values())
     r = random.uniform(0, total)
     upto = 0
     chosen = None
-    for rarity, chance in PUMPKIN_CASE_CHANCES.items():
+    for rarity, chance in chances.items():
         upto += chance
         if r <= upto:
             chosen = rarity
             break
-    pool = halloween_cards.get(chosen, [])
+    pool = cards_pool.get(chosen, [])
     if not pool:
-        pool = halloween_cards["🎃 Тыквенная"]
+        pool = list(cards_pool.values())[0]
     return random.choice(pool), chosen
+
+
+def find_hw_card(name):
+    """Ищет хеллоуинскую карточку по имени (во всех кейсах)."""
+    for case_type, rarities in HW_CARDS.items():
+        for rarity, lst in rarities.items():
+            for c in lst:
+                if c["name"].lower() == name.lower():
+                    return c
+    return None
 
 
 def get_user(uid, username=None):
@@ -263,9 +345,7 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
     bg.save(output, format="PNG")
     output.seek(0)
     return output
-
-
-@dp.message(Command("start"))
+   @dp.message(Command("start"))
 async def start(message: types.Message):
     get_user(message.from_user.id, message.from_user.username)
     await message.answer(
@@ -603,8 +683,6 @@ async def miner_cashout(call: types.CallbackQuery):
         reply_markup=kb, parse_mode="Markdown"
     )
     await call.answer(f"Получено {win}!")
-
-
 # ==== HALLOWEEN ====
 @dp.message(Command("halloween"))
 async def halloween_menu(message: types.Message):
@@ -626,7 +704,7 @@ async def halloween_menu(message: types.Message):
         f"*Выбирай:*"
     )
     try:
-        photo = FSInputFile("ChatGPT Image 6 окт. 2026 г., 11_12_35.png")
+        photo = FSInputFile(HW_BANNER)
         await message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
     except Exception:
         await message.answer(caption, reply_markup=kb, parse_mode="Markdown")
@@ -675,7 +753,7 @@ async def hw_back(call: types.CallbackQuery):
     )
     try:
         await call.message.delete()
-        photo = FSInputFile("ChatGPT Image 6 окт. 2026 г., 11_12_35.png")
+        photo = FSInputFile(HW_BANNER)
         await call.message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
     except Exception:
         try:
@@ -694,9 +772,9 @@ async def hw_cases_menu(call: types.CallbackQuery):
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     balance, _, _, _, hw = get_user(uid)
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎃 Тыквенный кейс — 1000 🍬", callback_data=f"hw_pumpkin_{uid}")],
-        [InlineKeyboardButton(text="💀 Скелетный кейс — скоро", callback_data=f"hw_soon_{uid}")],
-        [InlineKeyboardButton(text="👻 Призрачный кейс — скоро", callback_data=f"hw_soon_{uid}")],
+        [InlineKeyboardButton(text="🎃 Тыквенный кейс — 1000 🍬", callback_data=f"hw_case_pumpkin_{uid}")],
+        [InlineKeyboardButton(text="💀 Скелетный кейс — 10000 🍬", callback_data=f"hw_case_skeleton_{uid}")],
+        [InlineKeyboardButton(text="👻 Призрачный кейс — 100000 🍬", callback_data=f"hw_case_ghost_{uid}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_back_{uid}")],
     ])
     await call.message.edit_caption(
@@ -761,55 +839,81 @@ async def hw_convert_from(call: types.CallbackQuery):
     await call.answer()
 
 
-@dp.callback_query(F.data.startswith("hw_pumpkin_"))
-async def hw_pumpkin_case(call: types.CallbackQuery):
-    uid = int(call.data.split("_")[2])
+# ==== КЕЙСЫ ====
+CASE_NAMES = {
+    "pumpkin": "🎃 Тыквенный",
+    "skeleton": "💀 Скелетный",
+    "ghost": "👻 Призрачный",
+}
+
+
+@dp.callback_query(F.data.startswith("hw_case_"))
+async def hw_case_open_menu(call: types.CallbackQuery):
+    parts = call.data.split("_")
+    case_type = parts[2]
+    uid = int(parts[3])
     if call.from_user.id != uid:
         await call.answer("Не твоё меню!", show_alert=True)
         return
+
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     balance, _, _, _, hw = get_user(uid)
+    price = CASE_PRICES[case_type]
+
+    chances = CASE_CHANCES[case_type]
+    chances_text = "\n".join([f"{r} — {c}%" for r, c in chances.items()])
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🎃 Открыть за {PUMPKIN_CASE_PRICE} 🍬", callback_data=f"hw_open_pumpkin_{uid}")],
+        [InlineKeyboardButton(text=f"🎁 Открыть за {price} 🍬", callback_data=f"hw_open_{case_type}_{uid}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_cases_{uid}")],
     ])
     await call.message.edit_caption(
         caption=(
-            f"🎃 *Тыквенный кейс* — @{username}\n\n"
-            f"💰 Цена: {PUMPKIN_CASE_PRICE} 🍬\n🍬 У тебя: {hw}\n\n"
-            f"*Что выпадает:*\n🎃 Тыквенная — 70%\n👻 Призрачная — 25%\n🧙 Ведьминская — 4%\n🧛 Вампирская — 1%"
+            f"{CASE_NAMES[case_type]} *кейс* — @{username}\n\n"
+            f"💰 Цена: {price} 🍬\n🍬 У тебя: {hw}\n\n"
+            f"*Что выпадает:*\n{chances_text}"
         ),
         reply_markup=kb, parse_mode="Markdown"
     )
     await call.answer()
 
 
-@dp.callback_query(F.data.startswith("hw_open_pumpkin_"))
-async def hw_open_pumpkin(call: types.CallbackQuery):
-    uid = int(call.data.split("_")[3])
+@dp.callback_query(F.data.startswith("hw_open_"))
+async def hw_open_case(call: types.CallbackQuery):
+    parts = call.data.split("_")
+    case_type = parts[2]
+    uid = int(parts[3])
     if call.from_user.id != uid:
         await call.answer("Не твоё меню!", show_alert=True)
         return
+
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     balance, _, _, _, hw = get_user(uid)
-    if hw < PUMPKIN_CASE_PRICE:
-        await call.answer(f"❌ Нужно {PUMPKIN_CASE_PRICE} 🍬, у тебя {hw}", show_alert=True)
+    price = CASE_PRICES[case_type]
+
+    if hw < price:
+        await call.answer(f"❌ Нужно {price} 🍬, у тебя {hw}", show_alert=True)
         return
-    cur.execute("UPDATE users SET hw_balance = hw_balance - ? WHERE user_id = ?", (PUMPKIN_CASE_PRICE, uid))
+
+    cur.execute("UPDATE users SET hw_balance = hw_balance - ? WHERE user_id = ?", (price, uid))
     db.commit()
-    card, rarity = roll_halloween_card()
+    card, rarity = roll_hw_card(case_type)
     cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, card["name"]))
     db.commit()
-    new_hw = hw - PUMPKIN_CASE_PRICE
+    new_hw = hw - price
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎃 Открыть ещё", callback_data=f"hw_open_pumpkin_{uid}")],
+        [InlineKeyboardButton(text="🎁 Открыть ещё", callback_data=f"hw_open_{case_type}_{uid}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_cases_{uid}")],
     ])
+
     try:
         photo = FSInputFile(card["file"])
         caption = (
-            f"🎃 *Тыквенный кейс* — @{username}\n\n🎉 Тебе выпала карточка!\n\n"
-            f"🎴 *{card['name']}*\nРедкость: {rarity}\n💰 Цена: {card['price']} 🍬\n\n🍬 Осталось: {new_hw}"
+            f"{CASE_NAMES[case_type]} *кейс* — @{username}\n\n"
+            f"🎉 Тебе выпала карточка!\n\n"
+            f"🎴 *{card['name']}*\nРедкость: {rarity}\n💰 Цена: {card['price']} 🍬\n\n"
+            f"🍬 Осталось: {new_hw}"
         )
         await call.message.delete()
         await call.message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
@@ -818,7 +922,7 @@ async def hw_open_pumpkin(call: types.CallbackQuery):
             caption=f"🎉 Выпала: *{card['name']}* ({rarity}, {card['price']} 🍬)\n🍬 Осталось: {new_hw}",
             reply_markup=kb, parse_mode="Markdown"
         )
-    await call.answer("🎃 Кейс открыт!")
+    await call.answer("🎁 Кейс открыт!")
     # ==== ХЕЛЛОУИН-БОСС ====
 def boss_round_info(round_num):
     if round_num == 1:
@@ -859,7 +963,7 @@ def boss_render_text(game, uid):
         f"*Правила:*\n"
         f"🎃 Тыква → боссу −10 HP\n"
         f"❌ Промах → тебе −10 HP\n"
-        f"⚔️ Каждые 3 хода → тебе −5 HP от босса"
+        f"⚔️ Каждые 3 хода → тебе −5 HP"
     )
 
 
@@ -905,7 +1009,6 @@ async def hw_boss_start(call: types.CallbackQuery):
         return
 
     username = call.from_user.username or call.from_user.full_name or "Игрок"
-
     cells, pumpkins_count = boss_round_info(1)
     pumpkins = set(random.sample(range(cells), pumpkins_count))
 
@@ -922,7 +1025,6 @@ async def hw_boss_start(call: types.CallbackQuery):
         "moves": 0,
     }
     boss_lock["current"] = uid
-
     kb = boss_build_kb(boss_games[uid])
 
     try:
@@ -1162,14 +1264,12 @@ async def hw_boss_done(call: types.CallbackQuery):
     )
     try:
         await call.message.delete()
-        photo = FSInputFile("ChatGPT Image 6 окт. 2026 г., 11_12_35.png")
+        photo = FSInputFile(HW_BANNER)
         await call.message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
     except Exception:
         pass
     await call.answer()
-
-
-# ==== /cancel ====
+    # ==== /cancel ====
 @dp.message(Command("cancel"))
 async def cancel_game(message: types.Message):
     uid = message.from_user.id
@@ -1380,14 +1480,7 @@ async def sell(message: types.Message):
     if not row:
         await message.answer("❌ Нет такой карточки.")
         return
-    hw_card = None
-    for rarity, lst in halloween_cards.items():
-        for c in lst:
-            if c["name"].lower() == name.lower():
-                hw_card = c
-                break
-        if hw_card:
-            break
+    hw_card = find_hw_card(name)
     card_data = next((c for c in cards if c["name"].lower() == name.lower()), None)
     if hw_card:
         cur.execute("DELETE FROM inventory WHERE rowid = ?", (row[0],))
