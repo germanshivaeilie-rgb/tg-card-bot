@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import io
 import os
 import random
@@ -9,6 +10,15 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from aiogram.filters import Command
 from PIL import Image, ImageDraw, ImageFont
+
+# Видео выпадения карт (файл card_video.py должен лежать рядом с bot.py)
+try:
+    from card_video import render_card_video, VIDEO_W, VIDEO_H, VIDEO_SECONDS
+    USE_REVEAL_VIDEO = True
+except Exception as _e:
+    print("⚠️ Видео выпадения отключено:", _e)
+    USE_REVEAL_VIDEO = False
+    VIDEO_W, VIDEO_H, VIDEO_SECONDS = 576, 768, 4.2
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 COOLDOWN_MINUTES = 15
@@ -358,6 +368,14 @@ def format_cooldown(seconds_left):
     return f"{secs} сек"
 
 
+async def safe_edit(msg, text, **kwargs):
+    """Редактирует сообщение и молча игнорирует ошибки (например «текст не изменился»)."""
+    try:
+        await msg.edit_text(text, **kwargs)
+    except Exception:
+        pass
+
+
 def make_circle_avatar(avatar_img, size, border=8):
     avatar_img = avatar_img.resize((size, size))
     mask = Image.new("L", (size, size), 0)
@@ -407,6 +425,54 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
     bg.save(output, format="PNG")
     output.seek(0)
     return output
+
+
+# ==================== ВИДЕО ВЫПАДЕНИЯ КАРТЫ ====================
+VIDEO_DIR = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."), "video_cache")
+os.makedirs(VIDEO_DIR, exist_ok=True)
+render_sem = asyncio.Semaphore(2)   # одновременно собираем не больше 2 видео
+opening_users = set()               # кто сейчас открывает кейс (защита от двойного клика)
+
+
+def _video_path(card_data, rarity_label):
+    key = hashlib.md5(f"{card_data['file']}|{card_data['name']}|{rarity_label}|v1".encode()).hexdigest()
+    return os.path.join(VIDEO_DIR, key + ".mp4")
+
+
+async def play_reveal(message, card_data, rarity_label):
+    """Показывает анимацию выпадения. Готовое видео кешируется на диске.
+    Если что-то пошло не так — просто пропускает, карта всё равно покажется."""
+    if not USE_REVEAL_VIDEO:
+        return
+    status = None
+    try:
+        path = _video_path(card_data, rarity_label)
+        if not os.path.exists(path):
+            status = await message.answer("🎁 Открываем...")
+            async with render_sem:
+                if not os.path.exists(path):
+                    await asyncio.to_thread(
+                        render_card_video, card_data["file"], path,
+                        card_data["name"], rarity_label, FONT_PATH
+                    )
+            try:
+                await status.delete()
+            except Exception:
+                pass
+            status = None
+        anim = await message.answer_animation(FSInputFile(path), width=VIDEO_W, height=VIDEO_H)
+        await asyncio.sleep(VIDEO_SECONDS + 0.4)
+        try:
+            await anim.delete()
+        except Exception:
+            pass
+    except Exception as e:
+        print("Ошибка видео выпадения:", e)
+        if status:
+            try:
+                await status.delete()
+            except Exception:
+                pass
 
 
 # ==================== МАГАЗИН ДРАКУЛЫ (логика) ====================
@@ -565,12 +631,22 @@ async def card(message: types.Message):
             return
     cur.execute("UPDATE users SET last_card = ? WHERE user_id = ?", (datetime.now().isoformat(), uid))
     db.commit()
+
+    # Сначала выбиваем все карты и кладём в инвентарь
+    drawn = []
     for _ in range(level):
         c = roll_card()
         cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, c["name"]))
         db.commit()
         cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? ORDER BY rowid DESC LIMIT 1", (uid, c["name"]))
         inv_id = cur.fetchone()[0]
+        drawn.append((c, inv_id))
+
+    # Видео показываем для самой дорогой выпавшей карты
+    best = max(drawn, key=lambda x: x[0]["price"])[0]
+    await play_reveal(message, best, best["rarity"])
+
+    for c, inv_id in drawn:
         caption = f"@{username}, вам выпала:\n🎴 {c['name']}\n{c['rarity']} | 💰 Цена: {c['price']} монет"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"💰 Продать: {c['name']} ({c['price']})", callback_data=f"sell_card_{inv_id}_{c['price']}")],
@@ -1303,39 +1379,48 @@ async def hw_open_case(call: types.CallbackQuery):
     if call.from_user.id != uid:
         await call.answer("Не твоё меню!", show_alert=True)
         return
-    username = call.from_user.username or call.from_user.full_name or "Игрок"
-    balance, _, _, _, hw, _ = get_user(uid)
-    price = CASE_PRICES[case_type]
-    if hw < price:
-        await call.answer(f"❌ Нужно {price} 🍬, у тебя {hw}", show_alert=True)
+    # защита от двойного клика, пока играет видео
+    if uid in opening_users:
+        await call.answer("⏳ Кейс уже открывается...")
         return
-    cur.execute("UPDATE users SET hw_balance = hw_balance - ? WHERE user_id = ?", (price, uid))
-    db.commit()
-    got_card, rarity = roll_hw_card(case_type)
-    cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, got_card["name"]))
-    db.commit()
-    new_hw = hw - price
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 Открыть ещё", callback_data=f"hw_open_{case_type}_{uid}")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_cases_{uid}")],
-    ])
+    opening_users.add(uid)
     try:
-        photo = FSInputFile(got_card["file"])
-        caption = f"{CASE_NAMES[case_type]} *кейс* — @{username}\n\n🎉 Тебе выпала карточка!\n\n🎴 *{got_card['name']}*\nРедкость: {rarity}\n💰 Цена: {got_card['price']} 🍬\n\n🍬 Осталось: {new_hw}"
-        await call.message.delete()
-        await call.message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
-    except Exception:
+        username = call.from_user.username or call.from_user.full_name or "Игрок"
+        balance, _, _, _, hw, _ = get_user(uid)
+        price = CASE_PRICES[case_type]
+        if hw < price:
+            await call.answer(f"❌ Нужно {price} 🍬, у тебя {hw}", show_alert=True)
+            return
+        cur.execute("UPDATE users SET hw_balance = hw_balance - ? WHERE user_id = ?", (price, uid))
+        db.commit()
+        got_card, rarity = roll_hw_card(case_type)
+        cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, got_card["name"]))
+        db.commit()
+        new_hw = hw - price
+        await call.answer("🎁 Кейс открывается!")
         try:
-            await call.message.edit_caption(
-                caption=f"🎉 Выпала: *{got_card['name']}* ({rarity}, {got_card['price']} 🍬)\n🍬 Осталось: {new_hw}",
-                reply_markup=kb, parse_mode="Markdown"
-            )
+            await call.message.delete()
         except Exception:
-            await call.message.answer(
-                f"🎉 Выпала: *{got_card['name']}* ({rarity}, {got_card['price']} 🍬)\n🍬 Осталось: {new_hw}",
-                reply_markup=kb, parse_mode="Markdown"
-            )
-    await call.answer("🎁 Кейс открыт!")
+            pass
+
+        # видео выпадения
+        await play_reveal(call.message, got_card, rarity)
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎁 Открыть ещё", callback_data=f"hw_open_{case_type}_{uid}")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_cases_{uid}")],
+        ])
+        caption = (
+            f"{CASE_NAMES[case_type]} *кейс* — @{username}\n\n🎉 Тебе выпала карточка!\n\n"
+            f"🎴 *{got_card['name']}*\nРедкость: {rarity}\n💰 Цена: {got_card['price']} 🍬\n\n🍬 Осталось: {new_hw}"
+        )
+        try:
+            photo = FSInputFile(got_card["file"])
+            await call.message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await call.message.answer(caption, reply_markup=kb, parse_mode="Markdown")
+    finally:
+        opening_users.discard(uid)
 
 
 # ==================== МАГАЗИН ДРАКУЛЫ ====================
@@ -2384,6 +2469,118 @@ async def upg_cb(call: types.CallbackQuery):
     await call.answer("Активировано!")
 
 
+# ==================== СБРОС ИГРОКОВ (только для DEV_ID) ====================
+# ВАЖНО: этот блок должен стоять ВЫШЕ обработчиков ввода числа и текста,
+# иначе они перехватят команды.
+def reset_user(uid, money_only=False):
+    """money_only=True — обнуляет только монеты и конфеты.
+    Иначе — полный сброс: карты, монеты, конфеты, уровень и кулдауны."""
+    if money_only:
+        cur.execute("UPDATE users SET balance = 0, hw_balance = 0 WHERE user_id = ?", (uid,))
+    else:
+        cur.execute(
+            "UPDATE users SET balance = 0, hw_balance = 0, level = 1, "
+            "last_card = NULL, last_daily = NULL, last_trade = NULL WHERE user_id = ?", (uid,))
+        cur.execute("DELETE FROM inventory WHERE user_id = ?", (uid,))
+    db.commit()
+    for d in (color_games, miner_games, hw_games, coin_games, wheel_games,
+              boss_games, trade_games, cards_view_games, sell_games):
+        d.pop(uid, None)
+    if boss_lock["current"] == uid:
+        boss_lock["current"] = None
+
+
+def find_targets(tokens):
+    ids, missing = [], []
+    for t in tokens:
+        t = t.lstrip("@")
+        if t.isdigit():
+            cur.execute("SELECT user_id FROM users WHERE user_id = ?", (int(t),))
+        else:
+            cur.execute("SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)", (t,))
+        row = cur.fetchone()
+        if row:
+            ids.append(row[0])
+        else:
+            missing.append(t)
+    return ids, missing
+
+
+@dp.message(Command("reset"))
+async def reset_cmd(message: types.Message):
+    if message.from_user.id != DEV_ID:
+        return
+    tokens = message.text.split()[1:]
+    if not tokens:
+        await message.answer(
+            "Использование:\n"
+            "/reset @user1 @user2 — полный сброс (карты, монеты, конфеты, уровень)\n"
+            "/resetmoney @user — только монеты и конфеты\n"
+            "/resetall — сбросить ВСЕХ"
+        )
+        return
+    ids, missing = find_targets(tokens)
+    for u in ids:
+        reset_user(u)
+    text = f"✅ Сброшено игроков: {len(ids)}"
+    if missing:
+        text += f"\n❌ Не найдены: {', '.join(map(str, missing))}"
+    await message.answer(text)
+
+
+@dp.message(Command("resetmoney"))
+async def resetmoney_cmd(message: types.Message):
+    if message.from_user.id != DEV_ID:
+        return
+    tokens = message.text.split()[1:]
+    if not tokens:
+        await message.answer("Использование: /resetmoney @user1 @user2")
+        return
+    ids, missing = find_targets(tokens)
+    for u in ids:
+        reset_user(u, money_only=True)
+    text = f"✅ Монеты и конфеты обнулены у: {len(ids)}"
+    if missing:
+        text += f"\n❌ Не найдены: {', '.join(map(str, missing))}"
+    await message.answer(text)
+
+
+@dp.message(Command("resetall"))
+async def resetall_cmd(message: types.Message):
+    if message.from_user.id != DEV_ID:
+        return
+    cur.execute("SELECT COUNT(*) FROM users")
+    n = cur.fetchone()[0]
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="⚠️ ДА, обнулить всех", callback_data="resetall_yes"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="resetall_no"),
+    ]])
+    await message.answer(f"⚠️ Это удалит карты, монеты, конфеты и уровни у {n} игроков. Точно?", reply_markup=kb)
+
+
+@dp.callback_query(F.data == "resetall_yes")
+async def resetall_yes(call: types.CallbackQuery):
+    if call.from_user.id != DEV_ID:
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    cur.execute("SELECT user_id FROM users")
+    for (u,) in cur.fetchall():
+        reset_user(u)
+    boss_lock["current"] = None
+    boss_cooldowns.clear()
+    await call.message.edit_text("✅ Все игроки обнулены.")
+    await call.answer()
+
+
+@dp.callback_query(F.data == "resetall_no")
+async def resetall_no(call: types.CallbackQuery):
+    if call.from_user.id != DEV_ID:
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    await call.message.edit_text("❌ Отменено.")
+    await call.answer()
+
+
 # ==================== ВВОД ЧИСЛА И ТЕКСТА ====================
 # ВАЖНО: эти обработчики ДОЛЖНЫ быть в самом конце, после всех команд,
 # иначе они перехватят сообщения раньше команд /profile, /top, /sell и т.д.
@@ -2426,7 +2623,7 @@ async def handle_number(message: types.Message):
         await message.answer(f"✅ Обмен!\n🍬 -{amount}\n💰 +{money_get}")
         return
 
-    # Color Dice
+    # ---------- Color Dice (с мерцанием перед каждым цветом) ----------
     game = color_games.get(uid)
     if game and game.get("state") == "wait_bet":
         bet = int(message.text)
@@ -2443,31 +2640,42 @@ async def handle_number(message: types.Message):
         del color_games[uid]
         result = [random.choice(COLORS) for _ in range(4)]
         matches = sum(1 for c in result if c["code"] == chosen["code"])
-        msg = await message.answer(f"🎲 Крутим...\n\n{chosen['emoji']}")
-        await asyncio.sleep(0.9)
+        head = (
+            f"🎲 *Color Dice* — @{username}\n"
+            f"Твой цвет: {chosen['emoji']} {chosen['name']}\n"
+            f"💰 Ставка: {bet}"
+        )
+        msg = await message.answer(f"{head}\n\n🎲 Крутим...", parse_mode="Markdown")
+        await asyncio.sleep(0.8)
         progressive = []
         for c in result:
+            # мерцание: эмодзи быстро меняются
+            for _ in range(2):
+                flick = random.choice(COLORS)["emoji"]
+                await safe_edit(msg, f"{head}\n\n{' '.join(progressive + [flick])}", parse_mode="Markdown")
+                await asyncio.sleep(0.4)
+            # цвет фиксируется
             progressive.append(c["emoji"])
-            text = f"🎲 *Color Dice* — @{username}\nТвой цвет: {chosen['emoji']} {chosen['name']}\n💰 Ставка: {bet}\n\n{' '.join(progressive)}"
-            await msg.edit_text(text, parse_mode="Markdown")
-            await asyncio.sleep(0.9)
+            await safe_edit(msg, f"{head}\n\n{' '.join(progressive)}", parse_mode="Markdown")
+            await asyncio.sleep(0.6)
+        shown = ' '.join(progressive)
         if matches == 1:
             win = bet * 2
             cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
             db.commit()
-            rt = f"🎲 *Color Dice* — @{username}\nТвой цвет: {chosen['emoji']} {chosen['name']}\n💰 Ставка: {bet}\n\n{' '.join(progressive)}\n\nСовпадений: {matches}\n🎉 *Выиграл {win} монет!* (×2)"
+            rt = f"{head}\n\n{shown}\n\nСовпадений: {matches}\n🎉 *Выиграл {win} монет!* (×2)"
         elif matches == 4:
             win = bet * 4
             cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
             db.commit()
-            rt = f"🎲 *Color Dice* — @{username}\nТвой цвет: {chosen['emoji']} {chosen['name']}\n💰 Ставка: {bet}\n\n{' '.join(progressive)}\n\nСовпадений: {matches}\n🎉 *ДЖЕКПОТ! +{win}!* (×4)"
+            rt = f"{head}\n\n{shown}\n\nСовпадений: {matches}\n🎉 *ДЖЕКПОТ! +{win}!* (×4)"
         else:
-            rt = f"🎲 *Color Dice* — @{username}\nТвой цвет: {chosen['emoji']} {chosen['name']}\n💰 Ставка: {bet}\n\n{' '.join(progressive)}\n\nСовпадений: {matches}\n❌ *Проиграл {bet} монет.*"
+            rt = f"{head}\n\n{shown}\n\nСовпадений: {matches}\n❌ *Проиграл {bet} монет.*"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎲 Играть снова", callback_data=f"casino_color_{uid}")],
             [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
         ])
-        await msg.edit_text(rt, reply_markup=kb, parse_mode="Markdown")
+        await safe_edit(msg, rt, reply_markup=kb, parse_mode="Markdown")
         return
 
     # Минёр
@@ -2492,7 +2700,7 @@ async def handle_number(message: types.Message):
         )
         return
 
-    # Колесо монстров
+    # ---------- Колесо монстров (лента замедляется и встаёт на выпавшем) ----------
     game = wheel_games.get(uid)
     if game and game.get("state") == "wait_bet":
         bet = int(message.text)
@@ -2507,20 +2715,25 @@ async def handle_number(message: types.Message):
         db.commit()
         del wheel_games[uid]
         seg = random.choices(WHEEL_SEGMENTS, weights=[s["weight"] for s in WHEEL_SEGMENTS])[0]
-        msg = await message.answer("👹 Колесо крутится...\n\n🎡")
-        for _ in range(4):
-            frame = " ".join(random.choice(WHEEL_SEGMENTS)["emoji"] for _ in range(3))
-            await msg.edit_text(
-                f"👹 *Колесо монстров* — @{username}\n💰 Ставка: {bet}\n\n🎡 {frame}",
-                parse_mode="Markdown"
-            )
-            await asyncio.sleep(0.8)
+        wheel_head = f"👹 *Колесо монстров* — @{username}\n💰 Ставка: {bet}"
+        msg = await message.answer(f"{wheel_head}\n\n🎡 Колесо раскручивается...", parse_mode="Markdown")
+        await asyncio.sleep(0.6)
+        ring = [s["emoji"] for s in WHEEL_SEGMENTS]
+        n = len(ring)
+        seg_idx = WHEEL_SEGMENTS.index(seg)
+        delays = [0.35, 0.35, 0.4, 0.45, 0.55, 0.7, 0.9, 1.2]
+        pos = (seg_idx - len(delays)) % n
+        for d in delays:
+            pos = (pos + 1) % n
+            strip = " ".join(ring[(pos + k) % n] for k in range(-2, 3))
+            await safe_edit(msg, f"{wheel_head}\n\n      ⬇️\n🎡 {strip}\n      ⬆️", parse_mode="Markdown")
+            await asyncio.sleep(d)
         win = int(bet * seg["mult"])
         if win > 0:
             cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
             db.commit()
         head = (
-            f"👹 *Колесо монстров* — @{username}\n💰 Ставка: {bet}\n\n"
+            f"{wheel_head}\n\n"
             f"Выпал: {seg['emoji']} *{seg['name']}* (×{seg['mult']})\n\n"
         )
         if win > bet:
@@ -2533,10 +2746,10 @@ async def handle_number(message: types.Message):
             [InlineKeyboardButton(text="👹 Крутить снова", callback_data=f"casino_wheel_{uid}")],
             [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
         ])
-        await msg.edit_text(head + result, reply_markup=kb, parse_mode="Markdown")
+        await safe_edit(msg, head + result, reply_markup=kb, parse_mode="Markdown")
         return
 
-    # Орёл и Решка
+    # ---------- Орёл и Решка (монетка крутится в воздухе) ----------
     game = coin_games.get(uid)
     if game and game.get("state") == "wait_bet":
         bet = int(message.text)
@@ -2553,14 +2766,16 @@ async def handle_number(message: types.Message):
         del coin_games[uid]
         my_choice_emoji = "🦅" if choice == "heads" else "🪙"
         my_choice_name = "Орёл" if choice == "heads" else "Монета"
-        msg = await message.answer(
+        coin_head = (
             f"🪙 *Орёл и Решка* — @{username}\n"
             f"Твой выбор: {my_choice_emoji} {my_choice_name}\n"
-            f"💰 Ставка: {bet}\n\n"
-            f"Монетка в воздухе... 🪙",
-            parse_mode="Markdown"
+            f"💰 Ставка: {bet}"
         )
-        await asyncio.sleep(1.2)
+        msg = await message.answer(f"{coin_head}\n\nМонетку подбрасывают...", parse_mode="Markdown")
+        await asyncio.sleep(0.6)
+        for frame in ["🪙 ⬆️", "🪙\n⬆️", "🌀 🪙 🌀", "🪙\n⬇️", "🪙 ⬇️"]:
+            await safe_edit(msg, f"{coin_head}\n\n{frame}", parse_mode="Markdown")
+            await asyncio.sleep(0.5)
         result = random.choice(["heads", "tails"])
         result_emoji = "🦅" if result == "heads" else "🪙"
         result_name = "Орёл" if result == "heads" else "Монета"
@@ -2568,26 +2783,14 @@ async def handle_number(message: types.Message):
             win = bet * 2
             cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
             db.commit()
-            text = (
-                f"🪙 *Орёл и Решка* — @{username}\n"
-                f"Твой выбор: {my_choice_emoji} {my_choice_name}\n"
-                f"💰 Ставка: {bet}\n\n"
-                f"Выпало: {result_emoji} {result_name}\n\n"
-                f"🎉 *Победа! +{win} монет!* (×2)"
-            )
+            text = f"{coin_head}\n\nВыпало: {result_emoji} {result_name}\n\n🎉 *Победа! +{win} монет!* (×2)"
         else:
-            text = (
-                f"🪙 *Орёл и Решка* — @{username}\n"
-                f"Твой выбор: {my_choice_emoji} {my_choice_name}\n"
-                f"💰 Ставка: {bet}\n\n"
-                f"Выпало: {result_emoji} {result_name}\n\n"
-                f"❌ *Проигрыш. -{bet} монет.*"
-            )
+            text = f"{coin_head}\n\nВыпало: {result_emoji} {result_name}\n\n❌ *Проигрыш. -{bet} монет.*"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🪙 Играть снова", callback_data=f"casino_coin_{uid}")],
             [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
         ])
-        await msg.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        await safe_edit(msg, text, reply_markup=kb, parse_mode="Markdown")
         return
 
 
