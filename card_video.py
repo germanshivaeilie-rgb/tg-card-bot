@@ -1,6 +1,23 @@
 """
-Делает короткое видео «выпадения карты» из картинки карты.
-Используется ботом (bot.py). Нужны: pillow, numpy, imageio-ffmpeg (или установленный ffmpeg).
+card_video.py — короткое видео выпадения карты с тематическим анимированным фоном.
+
+Для каждой редкости свой фон:
+  Обычная      — лёгкая пыль
+  Редкая       — синие искры
+  Эпическая    — фиолетовые шары вокруг карты
+  Легендарная  — золотые лучи и золотые искры
+  Секретная    — падающие клевера, зелёный туман
+  Бесконечная  — звёздное небо, падающие звёзды, радужные лучи
+  Специальная  — бирюзовые шестиугольники
+  Тыквенная    — огонь и тыквы
+  Призрачная   — летающие призраки
+  Ведьминская  — пузыри зелья и летучие мыши
+  Вампирская   — летучие мыши и красный туман
+  Скелетная    — черепа и пепел
+  Демоническая — адское пламя
+  Кошмарная    — моргающие глаза и черепа
+
+Нужно: Pillow, numpy и ffmpeg (системный или пакет imageio-ffmpeg).
 """
 import colorsys
 import math
@@ -10,269 +27,499 @@ import shutil
 import subprocess
 
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-VIDEO_W, VIDEO_H, VIDEO_FPS, VIDEO_SECONDS = 576, 768, 24, 4.2
+VIDEO_W, VIDEO_H = 480, 640
+FPS = 20
+VIDEO_SECONDS = 2.4
+N_FRAMES = int(FPS * VIDEO_SECONDS)
 
-# Цвет эффекта по редкости (ищется по слову в названии редкости)
-RARITY_COLORS = {
-    "Обычная": (190, 190, 205),
-    "Редкая": (60, 140, 255),
-    "Эпическая": (170, 70, 255),
-    "Легендарная": (255, 200, 40),
-    "Секретная": (40, 220, 90),
-    "Бесконечная": "rainbow",
-    "Специальная": (0, 220, 230),
-    "Тыквенная": (255, 140, 30),
-    "Призрачная": (150, 200, 255),
-    "Ведьминская": (150, 60, 230),
-    "Вампирская": (220, 20, 40),
-    "Скелетная": (225, 220, 190),
-    "Демоническая": (255, 50, 20),
-    "Кошмарная": (200, 30, 110),
+W, H = VIDEO_W, VIDEO_H
+CARD_CX, CARD_CY = W // 2, int(H * 0.44)
+
+
+# ------------------------------------------------------------------ ТЕМЫ
+# layers: (shape, count, (size_min, size_max), (speed_min, speed_max), direction, colors, alpha)
+THEMES = {
+    "common": dict(
+        top=(30, 32, 40), bot=(10, 10, 16), accent=(200, 200, 215),
+        layers=[("dot", 34, (1.2, 2.8), (0.05, 0.12), "up", [(255, 255, 255)], 140)],
+    ),
+    "rare": dict(
+        top=(8, 34, 80), bot=(3, 8, 26), accent=(80, 170, 255),
+        layers=[("spark", 18, (2, 4), (0.0, 0.0), "float", [(150, 210, 255)], 200),
+                ("dot", 18, (1.2, 2.5), (0.08, 0.16), "up", [(120, 190, 255)], 150)],
+    ),
+    "epic": dict(
+        top=(54, 12, 88), bot=(14, 4, 30), accent=(190, 100, 255),
+        layers=[("orb", 14, (3, 6), (0.12, 0.25), "orbit", [(210, 140, 255), (150, 90, 255)], 210),
+                ("spark", 10, (2, 4), (0.0, 0.0), "float", [(235, 190, 255)], 190)],
+    ),
+    "legendary": dict(
+        top=(96, 58, 0), bot=(26, 12, 0), accent=(255, 205, 60), rays=(255, 210, 90),
+        layers=[("spark", 22, (2, 5), (0.08, 0.2), "up", [(255, 225, 120), (255, 190, 50)], 220),
+                ("dot", 20, (1.5, 3), (0.1, 0.2), "up", [(255, 240, 170)], 170)],
+    ),
+    "secret": dict(
+        top=(0, 46, 24), bot=(0, 10, 6), accent=(60, 255, 140), mist=(30, 200, 100),
+        layers=[("clover", 16, (4, 8), (0.07, 0.16), "down", [(60, 255, 140), (20, 170, 90)], 150),
+                ("dot", 20, (1.2, 2.5), (0.05, 0.12), "up", [(150, 255, 200)], 140)],
+    ),
+    "infinite": dict(
+        top=(22, 0, 64), bot=(0, 0, 12), accent=(150, 120, 255), rays="rainbow", rainbow=True,
+        layers=[("star", 60, (1, 2.6), (0.0, 0.0), "float", [(255, 255, 255)], 230),
+                ("shoot", 3, (1, 1), (0.9, 1.4), "shoot", [(255, 255, 255)], 230)],
+    ),
+    "special": dict(
+        top=(0, 52, 74), bot=(0, 10, 26), accent=(0, 230, 255),
+        layers=[("hex", 14, (6, 16), (0.06, 0.14), "up", [(0, 230, 255), (255, 80, 220)], 170),
+                ("spark", 10, (2, 4), (0.0, 0.0), "float", [(200, 255, 255)], 200)],
+    ),
+    "pumpkin": dict(
+        top=(78, 30, 0), bot=(20, 6, 0), accent=(255, 140, 20),
+        layers=[("pumpkin", 6, (5, 9), (0.05, 0.1), "float", [(255, 130, 20)], 170),
+                ("dot", 30, (1.5, 3.2), (0.12, 0.28), "up", [(255, 200, 60), (255, 120, 20)], 220)],
+    ),
+    "ghost": dict(
+        top=(34, 62, 80), bot=(8, 16, 28), accent=(180, 235, 255), mist=(150, 210, 230),
+        layers=[("ghost", 9, (5, 10), (0.04, 0.09), "up", [(220, 245, 255)], 120),
+                ("dot", 18, (1.2, 2.4), (0.05, 0.1), "up", [(200, 240, 255)], 120)],
+    ),
+    "witch": dict(
+        top=(46, 10, 68), bot=(8, 20, 10), accent=(150, 255, 80),
+        layers=[("bubble", 18, (3, 8), (0.1, 0.22), "up", [(150, 255, 80), (190, 110, 255)], 170),
+                ("bat", 4, (4, 6), (0.12, 0.2), "across", [(150, 90, 200)], 210),
+                ("spark", 10, (2, 3.5), (0.0, 0.0), "float", [(200, 255, 150)], 190)],
+    ),
+    "vampire": dict(
+        top=(78, 0, 12), bot=(18, 0, 4), accent=(235, 30, 55), mist=(200, 20, 40),
+        layers=[("bat", 7, (4, 7), (0.1, 0.22), "across", [(200, 40, 65)], 210),
+                ("dot", 12, (2, 3.5), (0.1, 0.2), "down", [(255, 40, 60)], 200)],
+    ),
+    "skeleton": dict(
+        top=(50, 54, 58), bot=(10, 10, 12), accent=(235, 235, 220),
+        layers=[("skull", 6, (5, 8), (0.05, 0.1), "float", [(235, 235, 220)], 110),
+                ("dot", 34, (1, 2.4), (0.04, 0.1), "down", [(200, 200, 190)], 150)],
+    ),
+    "demon": dict(
+        top=(100, 12, 0), bot=(22, 0, 0), accent=(255, 70, 20), rays=(255, 70, 20),
+        layers=[("flame", 22, (4, 9), (0.12, 0.26), "up", [(255, 90, 20), (255, 160, 40)], 190),
+                ("dot", 30, (1.2, 2.6), (0.15, 0.3), "up", [(255, 220, 80)], 230)],
+    ),
+    "nightmare": dict(
+        top=(18, 0, 30), bot=(0, 0, 0), accent=(205, 0, 255),
+        layers=[("eye", 10, (4, 7), (0.0, 0.0), "float", [(255, 40, 200)], 200),
+                ("skull", 3, (6, 9), (0.04, 0.08), "float", [(190, 160, 220)], 90),
+                ("spark", 12, (2, 3.5), (0.0, 0.0), "float", [(220, 120, 255)], 190)],
+    ),
 }
-DEFAULT_COLOR = (255, 140, 30)
+
+KEYWORDS = [
+    ("обычн", "common"), ("редк", "rare"), ("эпическ", "epic"), ("легендар", "legendary"),
+    ("секретн", "secret"), ("бесконечн", "infinite"), ("специальн", "special"),
+    ("тыквен", "pumpkin"), ("призрачн", "ghost"), ("ведьмин", "witch"),
+    ("вампирск", "vampire"), ("скелетн", "skeleton"), ("демонич", "demon"),
+    ("кошмарн", "nightmare"),
+]
 
 
-def _ffmpeg_path():
-    p = shutil.which("ffmpeg")
-    if p:
-        return p
-    import imageio_ffmpeg
-    return imageio_ffmpeg.get_ffmpeg_exe()
+def theme_key(rarity_label):
+    low = (rarity_label or "").lower()
+    for kw, key in KEYWORDS:
+        if kw in low:
+            return key
+    return "common"
 
 
-def _color_for(rarity_label):
-    for key, col in RARITY_COLORS.items():
-        if key.lower() in (rarity_label or "").lower():
-            return col
-    return DEFAULT_COLOR
+# ------------------------------------------------------------------ ФИГУРЫ
+def sh_dot(d, x, y, s, c, **k):
+    d.ellipse((x - s, y - s, x + s, y + s), fill=c)
 
 
-def _load_font(size, font_path):
-    for p in (font_path,
-              "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
-        if p and os.path.exists(p):
-            try:
-                return ImageFont.truetype(p, size)
-            except Exception:
-                pass
+def sh_spark(d, x, y, s, c, **k):
+    p = [(x, y - s * 2), (x + s * .4, y - s * .4), (x + s * 2, y), (x + s * .4, y + s * .4),
+         (x, y + s * 2), (x - s * .4, y + s * .4), (x - s * 2, y), (x - s * .4, y - s * .4)]
+    d.polygon(p, fill=c)
+
+
+def sh_orb(d, x, y, s, c, **k):
+    d.ellipse((x - s * 2.2, y - s * 2.2, x + s * 2.2, y + s * 2.2), fill=c[:3] + (c[3] // 4,))
+    d.ellipse((x - s, y - s, x + s, y + s), fill=c)
+
+
+def sh_ghost(d, x, y, s, c, ph=0, **k):
+    s *= 1.6
+    d.ellipse((x - s, y - s * 1.2, x + s, y + s * .8), fill=c)
+    d.rectangle((x - s, y - s * .2, x + s, y + s * 1.2), fill=c)
+    wob = math.sin(ph) * s * .15
+    d.polygon([(x - s, y + s * 1.2), (x - s * .5, y + s * 1.7 + wob), (x, y + s * 1.2),
+               (x + s * .5, y + s * 1.7 - wob), (x + s, y + s * 1.2)], fill=c)
+    eye = (20, 30, 50, min(255, c[3] + 80))
+    d.ellipse((x - s * .5, y - s * .35, x - s * .15, y + s * .15), fill=eye)
+    d.ellipse((x + s * .15, y - s * .35, x + s * .5, y + s * .15), fill=eye)
+    d.ellipse((x - s * .2, y + s * .3, x + s * .2, y + s * .65), fill=eye)
+
+
+def sh_bat(d, x, y, s, c, ph=0, **k):
+    f = math.sin(ph * 3) * s * .9
+    for sg in (-1, 1):
+        d.polygon([(x, y), (x + sg * s * 1.1, y - s * .9 + f), (x + sg * s * 2.4, y - s * .2 + f),
+                   (x + sg * s * 1.8, y + s * .35), (x + sg * s * 1.2, y + s * .1),
+                   (x + sg * s * .7, y + s * .45), (x, y + s * .3)], fill=c)
+    d.ellipse((x - s * .4, y - s * .5, x + s * .4, y + s * .5), fill=c)
+    d.polygon([(x - s * .35, y - s * .4), (x - s * .25, y - s * .9), (x - s * .05, y - s * .45)], fill=c)
+    d.polygon([(x + s * .35, y - s * .4), (x + s * .25, y - s * .9), (x + s * .05, y - s * .45)], fill=c)
+
+
+def sh_flame(d, x, y, s, c, ph=0, **k):
+    fl = math.sin(ph * 4) * s * .25
+    d.polygon([(x + fl, y - s * 2), (x + s * .9, y - s * .2), (x + s * .6, y + s * .8), (x, y + s),
+               (x - s * .6, y + s * .8), (x - s * .9, y - s * .2)], fill=c)
+    inner = (255, 235, 140, c[3])
+    d.polygon([(x + fl * .5, y - s * .9), (x + s * .4, y + s * .1), (x, y + s * .7), (x - s * .4, y + s * .1)],
+              fill=inner)
+
+
+def sh_hex(d, x, y, s, c, ph=0, **k):
+    pts = [(x + math.cos(ph * .3 + i * math.pi / 3) * s, y + math.sin(ph * .3 + i * math.pi / 3) * s)
+           for i in range(6)]
+    d.polygon(pts, outline=c, width=2)
+
+
+def sh_clover(d, x, y, s, c, **k):
+    r = s * .75
+    for dx, dy in ((0, -.7), (-.7, .2), (.7, .2)):
+        d.ellipse((x + dx * s - r, y + dy * s - r, x + dx * s + r, y + dy * s + r), fill=c)
+    d.rectangle((x - s * .12, y, x + s * .12, y + s * 1.5), fill=c)
+
+
+def sh_skull(d, x, y, s, c, **k):
+    d.ellipse((x - s, y - s, x + s, y + s * .8), fill=c)
+    d.rectangle((x - s * .55, y + s * .4, x + s * .55, y + s * 1.2), fill=c)
+    dark = (10, 10, 14, min(255, c[3] + 120))
+    d.ellipse((x - s * .6, y - s * .3, x - s * .15, y + s * .25), fill=dark)
+    d.ellipse((x + s * .15, y - s * .3, x + s * .6, y + s * .25), fill=dark)
+    d.polygon([(x, y + s * .2), (x - s * .12, y + s * .5), (x + s * .12, y + s * .5)], fill=dark)
+
+
+def sh_pumpkin(d, x, y, s, c, **k):
+    d.ellipse((x - s * 1.4, y - s, x + s * 1.4, y + s), fill=c)
+    d.ellipse((x - s * .7, y - s, x + s * .7, y + s), outline=(120, 50, 0, c[3]), width=2)
+    d.rectangle((x - s * .15, y - s * 1.4, x + s * .15, y - s * .8), fill=(60, 110, 20, c[3]))
+    dark = (50, 15, 0, min(255, c[3] + 60))
+    d.polygon([(x - s * .7, y - s * .2), (x - s * .3, y - s * .2), (x - s * .5, y - s * .6)], fill=dark)
+    d.polygon([(x + s * .7, y - s * .2), (x + s * .3, y - s * .2), (x + s * .5, y - s * .6)], fill=dark)
+    d.polygon([(x - s * .6, y + s * .3), (x + s * .6, y + s * .3), (x, y + s * .7)], fill=dark)
+
+
+def sh_bubble(d, x, y, s, c, **k):
+    d.ellipse((x - s, y - s, x + s, y + s), outline=c, width=2, fill=c[:3] + (c[3] // 5,))
+    d.ellipse((x - s * .5, y - s * .6, x - s * .15, y - s * .25), fill=(255, 255, 255, c[3]))
+
+
+def sh_eye(d, x, y, s, c, ph=0, **k):
+    openness = max(0.08, abs(math.sin(ph)) ** 0.5)
+    w, h = s * 2.6, s * 1.3 * openness
+    d.ellipse((x - w, y - h, x + w, y + h), fill=c)
+    d.ellipse((x - s * .5, y - h * .9, x + s * .5, y + h * .9), fill=(0, 0, 0, c[3]))
+
+
+SHAPES = {
+    "dot": sh_dot, "spark": sh_spark, "star": sh_spark, "orb": sh_orb, "ghost": sh_ghost,
+    "bat": sh_bat, "flame": sh_flame, "hex": sh_hex, "clover": sh_clover, "skull": sh_skull,
+    "pumpkin": sh_pumpkin, "bubble": sh_bubble, "eye": sh_eye,
+}
+
+
+SIZE_BOOST = {"ghost": 2.3, "bat": 2.0, "skull": 2.0, "pumpkin": 2.0, "clover": 1.9, "hex": 1.5,
+              "flame": 1.8, "eye": 1.9, "bubble": 1.6, "orb": 1.5, "spark": 1.5}
+
+
+class Particle:
+    __slots__ = ("shape", "x0", "y0", "spd", "size", "ph", "color", "alpha", "dirn", "amp", "w")
+
+
+def build_particles(theme, seed):
+    rnd = random.Random(seed)
+    res = []
+    for shape, count, (smin, smax), (vmin, vmax), dirn, colors, alpha in theme["layers"]:
+        for _ in range(count):
+            p = Particle()
+            p.shape = shape
+            p.x0 = rnd.random()
+            p.y0 = rnd.random()
+            p.spd = rnd.uniform(vmin, vmax)
+            p.size = rnd.uniform(smin, smax) * SIZE_BOOST.get(shape, 1.0)
+            p.ph = rnd.uniform(0, 6.28)
+            p.color = rnd.choice(colors)
+            p.alpha = alpha
+            p.dirn = dirn
+            p.amp = rnd.uniform(6, 22)
+            p.w = rnd.uniform(1.2, 3.2)
+            res.append(p)
+    return res
+
+
+def particle_pos(p, t):
+    if p.dirn == "up":
+        return p.x0 * W + math.sin(t * p.w + p.ph) * p.amp, H * (1.15 - ((p.y0 + p.spd * t) % 1.3))
+    if p.dirn == "down":
+        return p.x0 * W + math.sin(t * p.w + p.ph) * p.amp, H * (((p.y0 + p.spd * t) % 1.3) - 0.15)
+    if p.dirn == "across":
+        return W * (((p.x0 + p.spd * t) % 1.4) - 0.2), p.y0 * H * .8 + math.sin(t * p.w + p.ph) * p.amp * 1.5
+    if p.dirn == "orbit":
+        ang = p.ph + t * p.spd * 6.28
+        return (CARD_CX + math.cos(ang) * (W * .30 + p.x0 * W * .22),
+                CARD_CY + math.sin(ang) * (H * .20 + p.y0 * H * .14))
+    if p.dirn == "shoot":
+        k = (t * p.spd + p.x0) % 1.6
+        return W * (1.1 - k * 1.1) + p.y0 * 60, H * (-0.1 + k * 0.6) + p.y0 * 40
+    return (p.x0 * W + math.sin(t * p.w * .5 + p.ph) * p.amp,
+            p.y0 * H + math.cos(t * p.w * .4 + p.ph) * p.amp * .6)
+
+
+# ------------------------------------------------------------------ ФОН
+def make_gradient(top, bot):
+    t = np.linspace(0, 1, H)[:, None, None]
+    arr = np.array(top, dtype=float)[None, None, :] * (1 - t) + np.array(bot, dtype=float)[None, None, :] * t
+    arr = np.repeat(arr, W, axis=1)
+    yy, xx = np.mgrid[0:H, 0:W]
+    dist = np.sqrt(((xx - W / 2) / (W * .75)) ** 2 + ((yy - H / 2) / (H * .75)) ** 2)
+    arr *= np.clip(1.15 - dist * .55, .35, 1.0)[:, :, None]
+    return Image.fromarray(arr.clip(0, 255).astype("uint8"), "RGB")
+
+
+def make_glow(color):
+    yy, xx = np.mgrid[0:H, 0:W]
+    dist = np.sqrt(((xx - CARD_CX) / (W * .55)) ** 2 + ((yy - CARD_CY) / (H * .42)) ** 2)
+    k = np.clip(1 - dist, 0, 1) ** 2
+    arr = np.array(color, dtype=float)[None, None, :] * k[:, :, None] * .55
+    return Image.fromarray(arr.clip(0, 255).astype("uint8"), "RGB")
+
+
+def draw_rays(d, t, color, alpha=34, count=14):
+    for i in range(count):
+        a0 = t * .5 + i * (2 * math.pi / count)
+        a1 = a0 + math.pi / count * .8
+        R = H * 1.2
+        c = color(i) if callable(color) else color
+        d.polygon([(CARD_CX, CARD_CY), (CARD_CX + math.cos(a0) * R, CARD_CY + math.sin(a0) * R),
+                   (CARD_CX + math.cos(a1) * R, CARD_CY + math.sin(a1) * R)], fill=c[:3] + (alpha,))
+
+
+def draw_mist(d, t, color):
+    for i in range(5):
+        x = (i * .27 + t * .03) % 1.3 * W - W * .15
+        y = H * (.72 + .05 * math.sin(t + i))
+        r = 110 + i * 12
+        d.ellipse((x - r, y - r * .35, x + r, y + r * .35), fill=color[:3] + (22,))
+
+
+# ------------------------------------------------------------------ КАРТА
+def ease_out_back(p):
+    c1, c3 = 1.35, 2.35
+    return 1 + c3 * (p - 1) ** 3 + c1 * (p - 1) ** 2
+
+
+def make_card_sprite(card_path, accent):
+    box_w, box_h = int(W * .72), int(H * .56)
+    img = Image.open(card_path).convert("RGBA")
+    img.thumbnail((box_w, box_h), Image.LANCZOS)
+    pad = 5
+    cw, ch = img.size[0] + pad * 2, img.size[1] + pad * 2
+    sprite = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+    frame = Image.new("RGBA", (cw, ch), accent + (255,))
+    mask = Image.new("L", (cw, ch), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, cw - 1, ch - 1), radius=20, fill=255)
+    sprite.paste(frame, (0, 0), mask)
+    inner = Image.new("L", (img.size[0], img.size[1]), 0)
+    ImageDraw.Draw(inner).rounded_rectangle((0, 0, img.size[0] - 1, img.size[1] - 1), radius=16, fill=255)
+    sprite.paste(img, (pad, pad), ImageChops.multiply(inner, img.split()[3]))
+    return sprite
+
+
+def make_card_glow(size, accent):
+    gw, gh = size[0] + 120, size[1] + 120
+    g = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
+    ImageDraw.Draw(g).rounded_rectangle((60, 60, gw - 60, gh - 60), radius=30, fill=accent + (210,))
+    return g.filter(ImageFilter.GaussianBlur(28))
+
+
+def scale_alpha(img, k):
+    if k >= 0.999:
+        return img
+    r, g, b, a = img.split()
+    return Image.merge("RGBA", (r, g, b, a.point(lambda v: int(v * k))))
+
+
+def load_font(path, size):
+    for p in (path, "DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            continue
     try:
-        return ImageFont.load_default(size=size)
+        return ImageFont.load_default(size)
     except Exception:
         return ImageFont.load_default()
 
 
-def _smooth(x):
-    x = min(max(x, 0.0), 1.0)
-    return x * x * (3 - 2 * x)
+def strip_emoji(label):
+    parts = (label or "").split(" ", 1)
+    return parts[1] if len(parts) == 2 else (label or "")
 
 
-def _ease_out_back(x, s=1.9):
-    x = min(max(x, 0.0), 1.0) - 1
-    return 1 + (s + 1) * x ** 3 + s * x ** 2
+def fit_text(d, text, font_path, size, max_w):
+    while size > 14:
+        f = load_font(font_path, size)
+        if d.textlength(text, font=f) <= max_w:
+            return f
+        size -= 2
+    return load_font(font_path, 14)
 
 
-def render_card_video(src_path, out_path, title, rarity_label, font_path=None):
-    W, H, FPS, DUR = VIDEO_W, VIDEO_H, VIDEO_FPS, VIDEO_SECONDS
-    N = int(FPS * DUR)
-    CX, CY = W // 2, 352
-    CS = 432
-    TS = CS + 12
-    rnd = random.Random()
-
-    base_col = _color_for(rarity_label)
-    rainbow = base_col == "rainbow"
-
-    def color_at(t):
-        if rainbow:
-            r, g, b = colorsys.hsv_to_rgb((t * 0.25) % 1.0, 0.85, 1.0)
-            return np.array([r * 255, g * 255, b * 255], dtype=np.float32)
-        return np.array(base_col, dtype=np.float32)
-
-    static_col = np.array((255, 200, 60) if rainbow else base_col, dtype=np.float32)
-    edge = tuple(int(v) for v in (static_col * 0.65 + 255 * 0.35))
-    dark_edge = tuple(int(v) for v in static_col)
-
-    # --- лицо и рубашка карты
-    art = Image.open(src_path)
-    art = ImageOps.exif_transpose(art).convert("RGB")
-    art = ImageOps.fit(art, (CS, CS), Image.LANCZOS)
-    m = Image.new("L", (CS, CS), 0)
-    ImageDraw.Draw(m).rounded_rectangle((0, 0, CS - 1, CS - 1), 24, fill=255)
-    front = Image.new("RGBA", (TS, TS), (0, 0, 0, 0))
-    ImageDraw.Draw(front).rounded_rectangle((0, 0, TS - 1, TS - 1), 30, fill=edge + (255,))
-    front.paste(art, (6, 6), m)
-
-    back = Image.new("RGBA", (TS, TS), (0, 0, 0, 0))
-    bd = ImageDraw.Draw(back)
-    bd.rounded_rectangle((0, 0, TS - 1, TS - 1), 30, fill=dark_edge + (255,))
-    bd.rounded_rectangle((8, 8, TS - 9, TS - 9), 25, fill=(24, 10, 6, 255))
-    for i in range(5):
-        bd.rounded_rectangle((24 + i * 11, 24 + i * 11, TS - 25 - i * 11, TS - 25 - i * 11), 16,
-                             outline=tuple(int(v * (0.5 + 0.1 * i)) for v in static_col) + (255,), width=2)
-    qf = _load_font(240, font_path)
-    bb = bd.textbbox((0, 0), "?", font=qf)
-    bd.text(((TS - (bb[2] - bb[0])) / 2 - bb[0], (TS - (bb[3] - bb[1])) / 2 - bb[1]), "?",
-            font=qf, fill=dark_edge + (255,))
-
-    # --- сетка для фона
-    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-    dx, dy = xx - CX, yy - CY
-    ang = np.arctan2(dy, dx)
-    dist = np.sqrt(dx * dx + dy * dy)
-    vign = np.clip(1 - ((xx - W / 2) ** 2 / (W * 0.9) ** 2 + (yy - H / 2) ** 2 / (H * 0.75) ** 2), 0, 1)
-    card_glow = np.exp(-(dist / 265) ** 2)
-
-    def background(t, power, col):
-        rays = 0.5 + 0.5 * np.sin(ang * 12 + t * 1.2) * np.sin(ang * 5 - t * 0.7)
-        rays = np.clip(rays, 0, 1) ** 2
-        fall = np.exp(-dist / (265 + 95 * power))
-        glow = np.exp(-(dist / (160 + 120 * power)) ** 2)
-        base = np.array([10, 5, 4], dtype=np.float32)
-        lum = (rays * fall * 0.75 + glow * 0.9) * power
-        return base[None, None, :] * vign[..., None] + lum[..., None] * col[None, None, :]
-
-    # --- частицы
-    particles = []
-
-    def burst(n, speed=(3, 13)):
-        for _ in range(n):
-            a = rnd.uniform(0, 2 * math.pi)
-            s = rnd.uniform(*speed)
-            particles.append([CX, CY, math.cos(a) * s, math.sin(a) * s - 1, rnd.uniform(0.6, 1.6), rnd.uniform(1.6, 4), 0.0])
-
-    def ambient():
-        if rnd.random() < 0.6:
-            particles.append([rnd.uniform(50, W - 50), H - rnd.uniform(0, 50), rnd.uniform(-0.5, 0.5),
-                              rnd.uniform(-2.6, -1.2), rnd.uniform(1.2, 2.4), rnd.uniform(1.2, 3), 0.0])
-
-    def draw_particles(col):
-        layer = Image.new("RGB", (W, H), (0, 0, 0))
-        d = ImageDraw.Draw(layer)
-        tint = col * 0.7 + 255 * 0.3
-        alive = []
-        for p in particles:
-            p[0] += p[2]; p[1] += p[3]; p[2] *= 0.965; p[3] *= 0.965; p[6] += 1 / FPS
-            life = 1 - p[6] / p[4]
-            if life <= 0:
-                continue
-            r = p[5] * (0.5 + life)
-            c = tuple(int(min(255, v * life)) for v in tint)
-            d.ellipse((p[0] - r, p[1] - r, p[0] + r, p[1] + r), fill=c)
-            alive.append(p)
-        particles[:] = alive
-        return layer.filter(ImageFilter.GaussianBlur(1.0))
-
-    # --- подписи
-    clean_rarity = "".join(ch for ch in (rarity_label or "") if ch.isalnum() or ch in " -").strip()
-    name_size = 36
-    name_font = _load_font(name_size, font_path)
-    probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
-    while probe.textlength(title, font=name_font) > W - 50 and name_size > 18:
-        name_size -= 2
-        name_font = _load_font(name_size, font_path)
-    sub_font = _load_font(24, font_path)
-
-    T_CHARGE, T_FLASH, T_FLIP_END = 1.0, 1.12, 1.85
-
-    tmp_out = out_path + ".tmp.mp4"
-    ff = subprocess.Popen(
-        [_ffmpeg_path(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
-         "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-         "-crf", "22", "-preset", "veryfast", "-movflags", "+faststart", "-an", tmp_out],
-        stdin=subprocess.PIPE)
-
-    burst_done = burst2 = False
+# ------------------------------------------------------------------ ВИДЕО
+def _ffmpeg_exe():
     try:
-        for i in range(N):
-            t = i / FPS
-            col = color_at(t)
-            if t < T_CHARGE:
-                power = 0.25 + 0.55 * _smooth(t / T_CHARGE)
-            elif t < T_FLASH:
-                power = 1.2
-            else:
-                power = 1.0 + 0.15 * math.sin(t * 3)
-            img = background(t, power, col)
-            img += (card_glow * (0.35 if t < T_FLASH else 0.55))[..., None] * col[None, None, :]
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+    exe = shutil.which("ffmpeg")
+    if not exe:
+        raise RuntimeError("ffmpeg не найден: добавь imageio-ffmpeg в requirements.txt")
+    return exe
 
-            shake = 0.0
-            if t < T_FLASH:
-                k = _smooth(t / T_CHARGE)
-                shake = math.sin(t * 60) * 8 * k
-                sc = 0.45 + 0.15 * k + 0.03 * math.sin(t * 25) * k
-                card_img, flipw = back, 1.0
-            else:
-                u = (t - T_FLASH) / (T_FLIP_END - T_FLASH)
-                sc = 0.6 + 0.4 * _ease_out_back(u)
-                theta = math.pi * _smooth(u)
-                flipw = max(abs(math.cos(theta)), 0.02)
-                card_img = back if theta < math.pi / 2 else front
-                if u >= 1:
-                    flipw, card_img = 1.0, front
-                    sc = 1.0 + 0.012 * math.sin((t - T_FLIP_END) * 2.2)
-            bob = 0.0 if t < T_FLIP_END else math.sin((t - T_FLIP_END) * 2.0) * 6
 
-            base = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
-            cw, ch = max(2, int(TS * sc * flipw)), max(2, int(TS * sc))
-            ci = card_img.resize((cw, ch), Image.BILINEAR)
-            if card_img is front and flipw < 0.999:
-                sh = int(255 * (0.55 + 0.45 * flipw))
-                ci = ImageChops.multiply(ci, Image.new("RGBA", ci.size, (sh, sh, sh, 255)))
-            px, py = int(CX - cw / 2 + shake), int(CY - ch / 2 + bob)
-            base.paste(ci, (px, py), ci)
+def render_frames(card_path, name, rarity_label, font_path):
+    key = theme_key(rarity_label)
+    th = THEMES[key]
+    accent = th["accent"]
+    seed = sum(ord(ch) for ch in (name or "") + key)
+    particles = build_particles(th, seed)
 
-            if T_FLIP_END + 0.15 < t < T_FLIP_END + 0.9:
-                s = (t - T_FLIP_END - 0.15) / 0.75
-                band = Image.new("L", (cw, ch), 0)
-                x0 = int(-0.4 * cw + s * 1.8 * cw)
-                ImageDraw.Draw(band).polygon([(x0, 0), (x0 + 72, 0), (x0 + 72 - 112, ch), (x0 - 112, ch)], fill=150)
-                band = band.filter(ImageFilter.GaussianBlur(11))
-                mk = ImageChops.multiply(band, ci.split()[3])
-                base.paste(Image.new("RGB", (cw, ch), (255, 235, 210)), (px, py), mk)
+    bg = make_gradient(th["top"], th["bot"])
+    glow = make_glow(accent)
+    sprite = make_card_sprite(card_path, accent)
+    card_glow = make_card_glow(sprite.size, accent)
+    sw, sh = sprite.size
 
-            if t >= T_FLASH and not burst_done:
-                burst(150); burst_done = True
-            if t >= T_FLIP_END and not burst2:
-                burst(70, (2, 8)); burst2 = True
-            if t > T_FLIP_END:
-                ambient()
-            elif t < T_FLASH and rnd.random() < 0.5 * _smooth(t / T_CHARGE):
-                particles.append([CX + rnd.uniform(-160, 160), CY + rnd.uniform(-160, 160), 0, 0, 0.5, 2.5, 0.0])
-            base = ImageChops.add(base, draw_particles(col))
+    tmp = ImageDraw.Draw(Image.new("RGB", (4, 4)))
+    name_font = fit_text(tmp, name, font_path, 34, W * .88)
+    label = strip_emoji(rarity_label).upper()
+    label_font = load_font(font_path, 22)
+    label_w = tmp.textlength(label, font=label_font)
 
-            if t > T_FLIP_END + 0.2:
-                a = _smooth((t - T_FLIP_END - 0.2) / 0.5)
-                tl = Image.new("RGBA", (W, 130), (0, 0, 0, 0))
-                td = ImageDraw.Draw(tl)
-                name_col = tuple(int(v) for v in (static_col * 0.4 + 255 * 0.6))
-                for txt, f_, y, c_ in ((title, name_font, 6, name_col), (clean_rarity, sub_font, 62, dark_edge)):
-                    if not txt:
-                        continue
-                    w_ = td.textlength(txt, font=f_)
-                    td.text(((W - w_) / 2, y), txt, font=f_, fill=c_ + (int(255 * a),))
-                base.paste(tl, (0, 620 + int((1 - a) * 16)), tl)
+    rainbow = th.get("rainbow", False)
 
-            arr = np.asarray(base).astype(np.float32)
-            if T_CHARGE <= t < T_FLASH + 0.3:
-                fl = _smooth((t - T_CHARGE) / (T_FLASH - T_CHARGE)) if t < T_FLASH else 1 - _smooth((t - T_FLASH) / 0.3)
-                arr = arr + (255 - arr) * fl
-            if t < 0.2:
-                arr = arr * _smooth(t / 0.2)
-            ff.stdin.write(np.clip(arr, 0, 255).astype(np.uint8).tobytes())
-        ff.stdin.close()
-        ff.wait()
-        if ff.returncode != 0:
+    for i in range(N_FRAMES):
+        t = i / FPS
+        fade = min(1.0, t / 0.25)
+
+        # фон + пульсирующее свечение
+        pulse = (0.75 + 0.25 * math.sin(t * 4)) * fade
+        lut = [int(v * pulse) for v in range(256)] * 3
+        frame = ImageChops.add(bg, glow.point(lut)).convert("RGBA")
+
+        # лучи / туман / частицы
+        ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov, "RGBA")
+        rays = th.get("rays")
+        if rays == "rainbow":
+            draw_rays(d, t, lambda k_, t_=t: tuple(int(c * 255) for c in colorsys.hsv_to_rgb(((k_ / 14) + t_ * .3) % 1, .7, 1)), 30)
+        elif rays:
+            draw_rays(d, t, rays, 32)
+        if th.get("mist"):
+            draw_mist(d, t, th["mist"])
+
+        for p in particles:
+            x, y = particle_pos(p, t)
+            if x < -40 or x > W + 40 or y < -40 or y > H + 40:
+                continue
+            a = p.alpha * fade
+            if p.shape in ("spark", "star", "eye"):
+                a *= 0.55 + 0.45 * math.sin(t * p.w * 2 + p.ph)
+            col = p.color
+            if rainbow and p.shape in ("star", "shoot"):
+                col = tuple(int(c * 255) for c in colorsys.hsv_to_rgb((p.x0 + t * .2) % 1, .35, 1))
+            c = col + (max(0, min(255, int(a))),)
+            if p.shape == "shoot":
+                d.line((x, y, x + 46, y - 22), fill=c, width=2)
+                continue
+            SHAPES[p.shape](d, x, y, p.size, c, ph=p.ph + t * p.w)
+        frame = Image.alpha_composite(frame, ov)
+
+        # карта: выпрыгивает с отскоком
+        p_in = max(0.0, min(1.0, (t - 0.12) / 0.55))
+        if p_in > 0:
+            sc = max(0.05, ease_out_back(p_in))
+            ang = (1 - p_in) * -14
+            bob = math.sin(t * 3.2) * 4 if p_in >= 1 else 0
+            cur_sprite = sprite.resize((max(2, int(sw * sc)), max(2, int(sh * sc))), Image.BILINEAR)
+            cur_glow = card_glow.resize((max(2, int(card_glow.size[0] * sc)), max(2, int(card_glow.size[1] * sc))), Image.BILINEAR)
+            if abs(ang) > 0.5:
+                cur_sprite = cur_sprite.rotate(ang, resample=Image.BILINEAR, expand=True)
+            gk = min(1.0, p_in * 1.5) * (0.8 + 0.2 * math.sin(t * 5))
+            cur_glow = scale_alpha(cur_glow, gk)
+            cur_sprite = scale_alpha(cur_sprite, min(1.0, p_in * 2.5))
+            gx, gy = CARD_CX - cur_glow.size[0] // 2, int(CARD_CY + bob) - cur_glow.size[1] // 2
+            frame.paste(cur_glow, (gx, gy), cur_glow)
+            cx, cy = CARD_CX - cur_sprite.size[0] // 2, int(CARD_CY + bob) - cur_sprite.size[1] // 2
+            frame.paste(cur_sprite, (cx, cy), cur_sprite)
+
+        # вспышка и ударная волна в момент приземления
+        tf = t - 0.55
+        if 0 <= tf < 0.5:
+            fo = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            fd = ImageDraw.Draw(fo, "RGBA")
+            r = tf * 900
+            fd.ellipse((CARD_CX - r, CARD_CY - r, CARD_CX + r, CARD_CY + r),
+                       outline=accent + (int(220 * (1 - tf / .5)),), width=6)
+            flash = Image.new("RGBA", (W, H), tuple(min(255, c + 90) for c in accent) + (int(90 * (1 - tf / .5) ** 2),))
+            frame = Image.alpha_composite(frame, Image.alpha_composite(fo, flash) if tf < .25 else fo)
+
+        # название и редкость
+        tn = (t - 0.8) / 0.35
+        if tn > 0:
+            tn = min(1.0, tn)
+            to = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            td = ImageDraw.Draw(to, "RGBA")
+            ny = int(H * 0.80 + (1 - tn) * 24)
+            nw = td.textlength(name, font=name_font)
+            nx = int((W - nw) / 2)
+            td.text((nx + 2, ny + 2), name, font=name_font, fill=(0, 0, 0, int(200 * tn)))
+            td.text((nx, ny), name, font=name_font, fill=(255, 255, 255, int(255 * tn)))
+            ly = int(H * 0.89 + (1 - tn) * 24)
+            px0, px1 = (W - label_w) / 2 - 18, (W + label_w) / 2 + 18
+            td.rounded_rectangle((px0, ly - 4, px1, ly + 34), radius=18,
+                                 fill=(0, 0, 0, int(140 * tn)), outline=accent + (int(255 * tn),), width=2)
+            td.text(((W - label_w) / 2, ly), label, font=label_font, fill=accent + (int(255 * tn),))
+            frame = Image.alpha_composite(frame, to)
+
+        yield frame.convert("RGB")
+
+
+def render_card_video(card_path, out_path, name, rarity_label, font_path=None):
+    """Собирает mp4 (без звука). Сигнатура совместима с bot.py."""
+    exe = _ffmpeg_exe()
+    tmp_out = out_path + ".part.mp4"
+    cmd = [exe, "-y", "-loglevel", "error",
+           "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+           "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "27",
+           "-pix_fmt", "yuv420p", "-movflags", "+faststart", tmp_out]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    try:
+        for fr in render_frames(card_path, name, rarity_label, font_path):
+            proc.stdin.write(fr.tobytes())
+        proc.stdin.close()
+        if proc.wait() != 0:
             raise RuntimeError("ffmpeg завершился с ошибкой")
         os.replace(tmp_out, out_path)
     except Exception:
         try:
-            ff.kill()
+            proc.kill()
         except Exception:
             pass
         if os.path.exists(tmp_out):
             os.remove(tmp_out)
         raise
-    return out_path
