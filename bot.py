@@ -11,19 +11,19 @@ from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButto
 from aiogram.filters import Command
 from PIL import Image, ImageDraw, ImageFont
 
-# Видео выпадения карт (файл card_video.py должен лежать рядом с bot.py)
 try:
     from card_video import render_card_video, VIDEO_W, VIDEO_H, VIDEO_SECONDS
     USE_REVEAL_VIDEO = True
 except Exception as _e:
-    print("⚠️ Видео выпадения отключено:", _e)
+    print("Видео выпадения отключено:", _e)
     USE_REVEAL_VIDEO = False
-    VIDEO_W, VIDEO_H, VIDEO_SECONDS = 480, 640, 2.4
+    VIDEO_W, VIDEO_H, VIDEO_SECONDS = 480, 640, 2.6
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-COOLDOWN_MINUTES = 15
+COOLDOWN_MINUTES = 30
 DEV_ID = 1473258682
 TRADE_COOLDOWN_MIN = 5
+dev_mode = set()
 
 FONT_PATH = "Roboto-Italic-VariableFont_wdth,wght.ttf"
 BG_PATH = "ChatGPT Image 5 окт. 2026 г., 09_26_45.png"
@@ -48,7 +48,7 @@ cards = [
     {"name": "Лера",                    "rarity": "🔷 Редкая",      "price": 750,    "file": "IMG_20261005_193418_201.jpg"},
     {"name": "Грустный хлеб",           "rarity": "🔮 Эпическая",   "price": 1000,   "file": "ChatGPT Image 22 сент. 2026 г., 22_04_28.png"},
     {"name": "Ляшки асеки",             "rarity": "🔮 Эпическая",   "price": 800,    "file": "IMG_20261005_143214_562.jpg"},
-    {"name": "Зелёная шлюшка",          "rarity": "🔮 Эпическая",   "price": 1500,   "file": "IMG_20261005_152528_718.jpg"},
+    {"name": "Зелёная шлюшка",          "rarity": "🔮 Эпическая",   "price": 1500,   "file": "ChatGPT Image 6 окт. 2026 г., 15_28_10.png"},
     {"name": "Тру Адамс",               "rarity": "👑 Легендарная", "price": 5000,   "file": "ChatGPT Image 3 окт. 2026 г., 20_39_20.png"},
     {"name": "Давалка",                 "rarity": "👑 Легендарная", "price": 10000,  "file": "IMG_20261004_211521_420.jpg"},
     {"name": "Moggфон",                 "rarity": "♣️ Секретная",   "price": 50000,  "file": "IMG_20261004_211400_997.jpg"},
@@ -57,63 +57,144 @@ cards = [
     {"name": "Хеллоуинский босс",       "rarity": "💠 Специальная", "price": 100000, "file": "ChatGPT Image 6 окт. 2026 г., 12_19_03.png"},
 ]
 
-# Хеллоуинские карточки больше нигде не выпадают и не продаются в магазине,
-# но остаются в базе, чтобы у игроков они сохранились (просмотр, продажа, трейд).
 HW_CARDS = {
     "pumpkin": {
         "🎃 Тыквенная": [
-            {"name": "Огненная Лера",   "price": 250,  "file": "ChatGPT Image 6 окт. 2026 г., 11_30_41.png"},
-            {"name": "Пожиратель тыкв", "price": 500,  "file": "ChatGPT Image 6 окт. 2026 г., 11_26_06.png"},
-            {"name": "Нора с тыквами",  "price": 1000, "file": "ChatGPT Image 6 окт. 2026 г., 11_19_50.png"},
+            {"name": "Огненная Лера",   "price": 22500,  "file": "ChatGPT Image 6 окт. 2026 г., 11_30_41.png"},
+            {"name": "Пожиратель тыкв", "price": 45000,  "file": "ChatGPT Image 6 окт. 2026 г., 11_26_06.png"},
+            {"name": "Нора с тыквами",  "price": 90000,  "file": "ChatGPT Image 6 окт. 2026 г., 11_19_50.png"},
         ],
         "👻 Призрачная": [
-            {"name": "Призрачный рубрик", "price": 1500, "file": "ChatGPT Image 6 окт. 2026 г., 11_23_00.png"},
+            {"name": "Призрачный рубрик", "price": 135000, "file": "ChatGPT Image 6 окт. 2026 г., 11_23_00.png"},
         ],
         "🧙 Ведьминская": [
-            {"name": "Ведьминский Еля", "price": 10000, "file": "ChatGPT Image 6 окт. 2026 г., 11_16_21.png"},
+            {"name": "Ведьминский Еля", "price": 900000, "file": "ChatGPT Image 6 окт. 2026 г., 11_16_21.png"},
         ],
         "🧛 Вампирская": [
-            {"name": "Вампирский хлеб", "price": 20000, "file": "ChatGPT Image 6 окт. 2026 г., 10_48_44.png"},
+            {"name": "Вампирский хлеб", "price": 1800000, "file": "ChatGPT Image 6 окт. 2026 г., 10_48_44.png"},
         ],
     },
     "skeleton": {
         "👻 Призрачная": [
-            {"name": "Призрачный рубрик", "price": 1500, "file": "ChatGPT Image 6 окт. 2026 г., 11_23_00.png"},
-            {"name": "Котакбас",          "price": 3000, "file": "ChatGPT Image 6 окт. 2026 г., 14_07_30.png"},
-            {"name": "Призрак заез",      "price": 5000, "file": "ChatGPT Image 6 окт. 2026 г., 14_10_39.png"},
+            {"name": "Котакбас",     "price": 270000, "file": "ChatGPT Image 6 окт. 2026 г., 14_07_30.png"},
+            {"name": "Призрак заез", "price": 450000, "file": "ChatGPT Image 6 окт. 2026 г., 14_10_39.png"},
         ],
         "🧙 Ведьминская": [
-            {"name": "Ведьминский Еля",   "price": 10000, "file": "ChatGPT Image 6 окт. 2026 г., 11_16_21.png"},
-            {"name": "Ведьминская кошка", "price": 15000, "file": "ChatGPT Image 6 окт. 2026 г., 14_03_47.png"},
-            {"name": "Ведьма неля",       "price": 17000, "file": "ChatGPT Image 6 окт. 2026 г., 14_23_18.png"},
+            {"name": "Ведьминская кошка", "price": 1350000, "file": "ChatGPT Image 6 окт. 2026 г., 14_03_47.png"},
+            {"name": "Ведьма неля",       "price": 1530000, "file": "ChatGPT Image 6 окт. 2026 г., 14_23_18.png"},
         ],
         "🧛 Вампирская": [
-            {"name": "Вампирский хлеб",                 "price": 20000, "file": "ChatGPT Image 6 окт. 2026 г., 10_48_44.png"},
-            {"name": "А хотелось бы ведьминский жезл",  "price": 25000, "file": "ChatGPT Image 6 окт. 2026 г., 14_28_54.png"},
+            {"name": "А хотелось бы ведьминский жезл", "price": 2250000, "file": "ChatGPT Image 6 окт. 2026 г., 14_28_54.png"},
         ],
         "💀 Скелетная": [
-            {"name": "Костяной Губка боб",       "price": 30000, "file": "ChatGPT Image 6 окт. 2026 г., 14_36_53.png"},
-            {"name": "Костяной Литвин x Спид",   "price": 40000, "file": "ChatGPT Image 6 окт. 2026 г., 14_42_20.png"},
+            {"name": "Костяной Губка боб",     "price": 2700000, "file": "ChatGPT Image 6 окт. 2026 г., 14_36_53.png"},
+            {"name": "Костяной Литвин x Спид", "price": 3600000, "file": "ChatGPT Image 6 окт. 2026 г., 14_42_20.png"},
         ],
         "😈 Демоническая": [
-            {"name": "Коллекционер душ", "price": 100000, "file": "ChatGPT Image 6 окт. 2026 г., 14_45_53.png"},
+            {"name": "Коллекционер душ", "price": 9000000, "file": "ChatGPT Image 6 окт. 2026 г., 14_45_53.png"},
         ],
     },
     "ghost": {
         "💀 Скелетная": [
-            {"name": "Костяной Губка боб",       "price": 30000, "file": "ChatGPT Image 6 окт. 2026 г., 14_36_53.png"},
-            {"name": "Костяной Литвин x Спид",   "price": 40000, "file": "ChatGPT Image 6 окт. 2026 г., 14_42_20.png"},
+            {"name": "Костяной Губка боб",     "price": 2700000, "file": "ChatGPT Image 6 окт. 2026 г., 14_36_53.png"},
+            {"name": "Костяной Литвин x Спид", "price": 3600000, "file": "ChatGPT Image 6 окт. 2026 г., 14_42_20.png"},
         ],
         "😈 Демоническая": [
-            {"name": "Коллекционер душ", "price": 100000, "file": "ChatGPT Image 6 окт. 2026 г., 14_45_53.png"},
+            {"name": "Коллекционер душ", "price": 9000000, "file": "ChatGPT Image 6 окт. 2026 г., 14_45_53.png"},
         ],
         "😱 Кошмарная": [
-            {"name": "Кошмарный Moggfone", "price": 500000, "file": "ChatGPT Image 6 окт. 2026 г., 15_28_10.png"},
+            {"name": "Кошмарный Moggfone", "price": 45000000, "file": "ChatGPT Image 6 окт. 2026 г., 15_28_10.png"},
         ],
     },
 }
 
-HALLOWEEN_RATE_BACK = 9
+RAD_CARDS = {
+    "🦠 Заражённая": [
+        {"name": "Проигравший доходяга", "price": 70000,    "file": "ChatGPT Image 8 окт. 2026 г., 00_46_45.png"},
+        {"name": "Заражёный фонк",       "price": 150000,   "file": "ChatGPT Image 8 окт. 2026 г., 01_03_41.png"},
+        {"name": "Заражёный глаз рубрика", "price": 200000, "file": "ChatGPT Image 8 окт. 2026 г., 00_51_53.png"},
+    ],
+    "☢️ Токсичная": [
+        {"name": "Слабый Спид",   "price": 300000, "file": "ChatGPT Image 8 окт. 2026 г., 01_35_33.png"},
+        {"name": "Токсичный кот", "price": 800000, "file": "ChatGPT Image 8 окт. 2026 г., 00_17_03.png"},
+    ],
+    "🧬 Мутировавшая": [
+        {"name": "Мутировавший дерку",     "price": 500000,  "file": "ChatGPT Image 8 окт. 2026 г., 01_19_09.png"},
+        {"name": "Мутировавший МГЕ прайм", "price": 1300000, "file": "ChatGPT Image 8 окт. 2026 г., 01_08_27.png"},
+        {"name": "Мутировавшая Леся",      "price": 1500000, "file": "ChatGPT Image 8 окт. 2026 г., 00_56_05.png"},
+    ],
+    "⚛️ Ядерная": [
+        {"name": "Слабо ядерная Лера", "price": 1400000, "file": "ChatGPT Image 8 окт. 2026 г., 01_54_55.png"},
+        {"name": "Ядерный Еля",        "price": 3500000, "file": "ChatGPT Image 8 окт. 2026 г., 01_28_31.png"},
+    ],
+    "🔥 Критическая масса": [
+        {"name": "Бойка против Мии", "price": 4250000, "file": "ChatGPT Image 8 окт. 2026 г., 01_50_08.png"},
+        {"name": "Крутой Хлеб",      "price": 6700000, "file": "ChatGPT Image 8 окт. 2026 г., 01_43_16.png"},
+    ],
+    "🕳 Отчуждение": [
+        {"name": "Правители доходяги", "price": 270000000, "file": "ChatGPT Image 8 окт. 2026 г., 01_59_13.png"},
+        {"name": "Всегда рядом",       "price": 300000000, "file": "ChatGPT Image 8 окт. 2026 г., 00_05_19.png"},
+    ],
+}
+
+RAD_CASES = {
+    "🦠 Заражённый": {
+        "price": 1,
+        "cooldown_min": 30,
+        "chances": [
+            ("🦠 Заражённая", 85),
+            ("☢️ Токсичная", 15),
+        ],
+    },
+    "☢️ Токсичный": {
+        "price": 5,
+        "cooldown_min": 30,
+        "chances": [
+            ("🦠 Заражённая", 70),
+            ("☢️ Токсичная", 25),
+            ("🧬 Мутировавшая", 5),
+        ],
+    },
+    "🧬 Мутировавший": {
+        "price": 10,
+        "cooldown_min": 30,
+        "chances": [
+            ("☢️ Токсичная", 70),
+            ("🧬 Мутировавшая", 25),
+            ("⚛️ Ядерная", 5),
+        ],
+    },
+    "⚛️ Ядерный": {
+        "price": 20,
+        "cooldown_min": 30,
+        "chances": [
+            ("🧬 Мутировавшая", 70),
+            ("⚛️ Ядерная", 25),
+            ("🔥 Критическая масса", 5),
+        ],
+    },
+    "🔥 Критический": {
+        "price": 50,
+        "cooldown_min": 30,
+        "chances": [
+            ("⚛️ Ядерная", 50),
+            ("🔥 Критическая масса", 50),
+        ],
+    },
+    "🕳 Отчуждённый": {
+        "price": 100,
+        "cooldown_min": 30,
+        "chances": [
+            ("⚛️ Ядерная", 79),
+            ("🔥 Критическая масса", 20),
+            ("🕳 Отчуждение", 1),
+        ],
+    },
+}
+
+TOKEN_RATE = 100000
+DAILY_TOKENS = 5
+HALLOWEEN_RATE_BACK = 90
 
 UPGRADE_PRICES = {2: 100000, 3: 1000000}
 MAX_LEVEL = 3
@@ -132,15 +213,6 @@ MINER_MULTIPLIERS = {
     5: 5.0, 6: 8.0, 7: 15.0, 8: 30.0, 9: 100.0,
 }
 
-color_games = {}
-miner_games = {}
-coin_games = {}
-send_games = {}
-trade_games = {}
-cards_view_games = {}
-sell_games = {}
-wheel_games = {}
-
 WHEEL_SEGMENTS = [
     {"emoji": "👻", "name": "Призрак",      "mult": 0,   "weight": 45},
     {"emoji": "🕷", "name": "Паук",         "mult": 0.5, "weight": 22},
@@ -150,7 +222,15 @@ WHEEL_SEGMENTS = [
     {"emoji": "👑", "name": "Король тыкв",  "mult": 10,  "weight": 1},
 ]
 
-DAILY_CANDY = 1000
+color_games = {}
+miner_games = {}
+coin_games = {}
+trade_games = {}
+cards_view_games = {}
+sell_games = {}
+wheel_games = {}
+rad_games = {}
+rad_convert_games = {}
 
 DB_PATH = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."), "game.db")
 db = sqlite3.connect(DB_PATH)
@@ -163,7 +243,8 @@ cur.execute("""CREATE TABLE IF NOT EXISTS users (
     level INTEGER DEFAULT 1,
     registered_at TEXT,
     hw_balance INTEGER DEFAULT 0,
-    last_trade TEXT
+    last_trade TEXT,
+    tokens INTEGER DEFAULT 0
 )""")
 cur.execute("""CREATE TABLE IF NOT EXISTS inventory (
     user_id INTEGER,
@@ -174,10 +255,17 @@ cur.execute("""CREATE TABLE IF NOT EXISTS trades (
     to_id INTEGER,
     card_name TEXT
 )""")
+cur.execute("""CREATE TABLE IF NOT EXISTS rad_cooldowns (
+    user_id INTEGER,
+    case_name TEXT,
+    last_time TEXT,
+    PRIMARY KEY (user_id, case_name)
+)""")
 db.commit()
 
 for _col, _type in (("hw_balance", "INTEGER DEFAULT 0"), ("registered_at", "TEXT"),
-                    ("last_trade", "TEXT"), ("last_daily", "TEXT")):
+                    ("last_trade", "TEXT"), ("last_daily", "TEXT"),
+                    ("tokens", "INTEGER DEFAULT 0")):
     try:
         cur.execute(f"SELECT {_col} FROM users LIMIT 1")
     except sqlite3.OperationalError:
@@ -206,6 +294,45 @@ def roll_card():
     return random.choice(pool)
 
 
+def roll_card_dev():
+    top_rarities = ["👑 Легендарная", "♣️ Секретная", "🌌 Бесконечная", "💠 Специальная"]
+    pool = [c for c in cards if c["rarity"] in top_rarities]
+    if not pool:
+        pool = cards
+    return random.choice(pool)
+
+
+def roll_rad_card(case_name):
+    case = RAD_CASES[case_name]
+    total = sum(ch for _, ch in case["chances"])
+    r = random.uniform(0, total)
+    upto = 0
+    chosen_rarity = None
+    for rarity, chance in case["chances"]:
+        upto += chance
+        if r <= upto:
+            chosen_rarity = rarity
+            break
+    pool = RAD_CARDS.get(chosen_rarity, [])
+    if not pool:
+        for rar in RAD_CARDS:
+            pool.extend(RAD_CARDS[rar])
+    if "🕳 Отчуждение" == chosen_rarity:
+        if random.random() < 0.5:
+            return [c for c in pool if c["name"] == "Всегда рядом"][0], chosen_rarity
+        else:
+            return [c for c in pool if c["name"] == "Правители доходяги"][0], chosen_rarity
+    return random.choice(pool), chosen_rarity
+
+
+def find_rad_card(name):
+    for rarity, lst in RAD_CARDS.items():
+        for c in lst:
+            if c["name"].lower() == name.lower():
+                return c
+    return None
+
+
 def find_hw_card(name):
     for case_type, rarities in HW_CARDS.items():
         for rarity, lst in rarities.items():
@@ -222,35 +349,58 @@ def find_any_card(name):
     hw = find_hw_card(name)
     if hw:
         return hw
+    rad = find_rad_card(name)
+    if rad:
+        return rad
     return None
+
+
+def has_always_near(uid):
+    cur.execute("SELECT COUNT(*) FROM inventory WHERE user_id = ? AND card_name = ?", (uid, "Всегда рядом"))
+    return cur.fetchone()[0] > 0
+
+
+def rad_case_price(uid, case_name):
+    base = RAD_CASES[case_name]["price"]
+    if has_always_near(uid):
+        discounted = int(base * 0.8)
+        return max(1, discounted)
+    return base
 
 
 def get_all_cards_unique():
     result = []
+    seen = set()
     for c in cards:
-        result.append(c)
-    seen = set(c["name"] for c in cards)
+        if c["name"] not in seen:
+            result.append(c)
+            seen.add(c["name"])
     for case_type, rarities in HW_CARDS.items():
         for rarity, lst in rarities.items():
             for c in lst:
                 if c["name"] not in seen:
                     result.append(c)
                     seen.add(c["name"])
+    for rarity, lst in RAD_CARDS.items():
+        for c in lst:
+            if c["name"] not in seen:
+                result.append(c)
+                seen.add(c["name"])
     return result
 
 
 def get_user(uid, username=None):
-    cur.execute("SELECT balance, last_card, level, registered_at, hw_balance, last_trade FROM users WHERE user_id = ?", (uid,))
+    cur.execute("SELECT balance, last_card, level, registered_at, hw_balance, last_trade, tokens FROM users WHERE user_id = ?", (uid,))
     row = cur.fetchone()
     if not row:
         now = datetime.now().isoformat()
         cur.execute("INSERT INTO users (user_id, username, registered_at) VALUES (?, ?, ?)", (uid, username, now))
         db.commit()
-        return 0, None, 1, now, 0, None
+        return 0, None, 1, now, 0, None, 0
     if username:
         cur.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, uid))
         db.commit()
-    return row[0], row[1], row[2], row[3], row[4], row[5]
+    return row[0], row[1], row[2], row[3], row[4], row[5], row[6]
 
 
 def format_date_ru(iso_str):
@@ -274,7 +424,6 @@ def format_cooldown(seconds_left):
 
 
 async def safe_edit(msg, text, **kwargs):
-    """Редактирует сообщение и молча игнорирует ошибки (например «текст не изменился»)."""
     try:
         await msg.edit_text(text, **kwargs)
     except Exception:
@@ -335,20 +484,18 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
 # ==================== ВИДЕО ВЫПАДЕНИЯ КАРТЫ ====================
 VIDEO_DIR = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."), "video_cache")
 os.makedirs(VIDEO_DIR, exist_ok=True)
-render_sem = asyncio.Semaphore(2)   # одновременно собираем не больше 2 видео
-video_file_ids = {}                 # после первой отправки Telegram запоминает видео — дальше оно уходит мгновенно
+render_sem = asyncio.Semaphore(2)
+video_file_ids = {}
 
 
 def _video_path(card_data, rarity_label):
-    # v2 — новый дизайн фона; старые кэшированные видео не используются
-    key = hashlib.md5(f"{card_data['file']}|{card_data['name']}|{rarity_label}|v2".encode()).hexdigest()
+    key = hashlib.md5(f"{card_data['file']}|{card_data['name']}|{rarity_label}|v3".encode()).hexdigest()
     return os.path.join(VIDEO_DIR, key + ".mp4")
 
 
 async def send_reveal(message, card_data, rarity_label, caption, reply_markup=None, parse_mode=None):
-    """1) Отправляет видео с подписью (без кнопок).
-    2) Когда видео доиграло — то же сообщение превращается в картинку карты с кнопками.
-    Возвращает True, если видео отправилось. Если нет — False (тогда шлём обычное фото)."""
+    """Показывает анимацию открытия карточки (тема зависит от редкости),
+    затем заменяет видео на картинку карты с кнопками."""
     if not USE_REVEAL_VIDEO:
         return False
     status = None
@@ -385,7 +532,6 @@ async def send_reveal(message, card_data, rarity_label, caption, reply_markup=No
                 pass
         return False
 
-    # ждём, пока видео доиграет, и меняем его на картинку карты
     await asyncio.sleep(VIDEO_SECONDS + 0.4)
     try:
         await sent.edit_media(
@@ -407,21 +553,25 @@ async def send_reveal(message, card_data, rarity_label, caption, reply_markup=No
 
 
 async def prerender_videos():
-    """При старте бота заранее собирает видео для всех выпадающих карт —
-    тогда первое выпадение тоже приходит мгновенно."""
+    """Заранее собирает видео для всех карт (обычные и из кейсов Доходяг)."""
     if not USE_REVEAL_VIDEO:
         return
+    jobs = []
     for c in cards:
-        if c["rarity"] not in RARITY_CHANCES:
-            continue
-        path = _video_path(c, c["rarity"])
+        if c["rarity"] in RARITY_CHANCES:
+            jobs.append((c, c["rarity"]))
+    for rarity, lst in RAD_CARDS.items():
+        for c in lst:
+            jobs.append((c, rarity))
+    for c, rarity in jobs:
+        path = _video_path(c, rarity)
         if os.path.exists(path):
             continue
         try:
             async with render_sem:
-                await asyncio.to_thread(render_card_video, c["file"], path, c["name"], c["rarity"], FONT_PATH)
+                await asyncio.to_thread(render_card_video, c["file"], path, c["name"], rarity, FONT_PATH)
         except Exception as e:
-            print("Не удалось заранее собрать видео для", c["name"], "-", e)
+            print("Не удалось собрать видео для", c["name"], "-", e)
 
 
 # ==================== ОСНОВНЫЕ КОМАНДЫ ====================
@@ -433,9 +583,12 @@ async def start(message: types.Message):
         "/card — выбить карточку\n"
         "/cards — просмотр карточек\n"
         "/casino — 🎰 Casino\n"
+        "/radioactive — ☢️ Доходяги\n"
         "/daily — 🎁 ежедневная награда\n"
         "/mycards — инвентарь\n"
         "/balance — баланс\n"
+        "/tokens — сколько токенов\n"
+        "/buytokens — купить токены\n"
         "/sell — продать карточку\n"
         "/sellall — продать всё\n"
         "/send @username сумма — передать монеты\n"
@@ -451,21 +604,22 @@ async def start(message: types.Message):
 async def card(message: types.Message):
     uid = message.from_user.id
     username = message.from_user.username or "Игрок"
-    balance, last, level, _, _, _ = get_user(uid, message.from_user.username)
-    if last:
+    is_dev = uid == DEV_ID and uid in dev_mode
+    balance, last, level, _, _, _, _ = get_user(uid, message.from_user.username)
+    if not is_dev and last:
         last_dt = datetime.fromisoformat(last)
         elapsed = datetime.now() - last_dt
         if elapsed < timedelta(minutes=COOLDOWN_MINUTES):
             left = timedelta(minutes=COOLDOWN_MINUTES) - elapsed
             await message.answer(f"@{username}, ты уже крутил, открой позже.\n⏳ Ждать ещё: {format_cooldown(int(left.total_seconds()))}")
             return
-    cur.execute("UPDATE users SET last_card = ? WHERE user_id = ?", (datetime.now().isoformat(), uid))
-    db.commit()
+    if not is_dev:
+        cur.execute("UPDATE users SET last_card = ? WHERE user_id = ?", (datetime.now().isoformat(), uid))
+        db.commit()
 
-    # Сначала выбиваем все карты и кладём в инвентарь
     drawn = []
     for _ in range(level):
-        c = roll_card()
+        c = roll_card_dev() if is_dev else roll_card()
         cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, c["name"]))
         db.commit()
         cur.execute("SELECT rowid FROM inventory WHERE user_id = ? AND card_name = ? ORDER BY rowid DESC LIMIT 1", (uid, c["name"]))
@@ -483,7 +637,6 @@ async def card(message: types.Message):
             photo = FSInputFile(c["file"])
             await message.answer_photo(photo, caption=caption, reply_markup=kb)
 
-    # Все карты показываем одновременно — не ждём одну за другой
     await asyncio.gather(*(show_one(c, inv_id) for c, inv_id in drawn))
 
 
@@ -499,11 +652,7 @@ async def sell_card_callback(call: types.CallbackQuery):
         await call.answer("❌ Уже продана.", show_alert=True)
         return
     cur.execute("DELETE FROM inventory WHERE rowid = ?", (inv_id,))
-    hw = find_hw_card(row[0])
-    if hw:
-        cur.execute("UPDATE users SET hw_balance = hw_balance + ? WHERE user_id = ?", (price, uid))
-    else:
-        cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (price, uid))
+    cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (price, uid))
     db.commit()
     await call.message.edit_caption(caption=f"✅ Продано: {row[0]} за {price}", reply_markup=None)
     await call.answer("Готово!")
@@ -511,8 +660,40 @@ async def sell_card_callback(call: types.CallbackQuery):
 
 @dp.message(Command("balance"))
 async def balance_cmd(message: types.Message):
-    balance, _, _, _, hw, _ = get_user(message.from_user.id, message.from_user.username)
-    await message.answer(f"💰 Обычных: {balance}\n🍬 Конфет: {hw}")
+    balance, _, _, _, hw, _, tokens = get_user(message.from_user.id, message.from_user.username)
+    await message.answer(f"💰 Монет: {balance}\n☢️ Токенов: {tokens}")
+
+
+@dp.message(Command("tokens"))
+async def tokens_cmd(message: types.Message):
+    balance, _, _, _, _, _, tokens = get_user(message.from_user.id, message.from_user.username)
+    await message.answer(f"☢️ Токенов: {tokens}\n(1 токен = {TOKEN_RATE} монет)")
+
+
+@dp.message(Command("buytokens"))
+async def buytokens_cmd(message: types.Message):
+    uid = message.from_user.id
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer(f"Использование: /buytokens количество\nКурс: 1 токен = {TOKEN_RATE} монет")
+        return
+    try:
+        amount = int(args[1])
+    except ValueError:
+        await message.answer("❌ Введи число.")
+        return
+    if amount <= 0:
+        await message.answer("❌ Больше 0.")
+        return
+    cost = amount * TOKEN_RATE
+    balance, _, _, _, _, _, _ = get_user(uid, message.from_user.username)
+    if balance < cost:
+        await message.answer(f"❌ Нужно {cost} монет, у тебя {balance}.")
+        return
+    cur.execute("UPDATE users SET balance = balance - ?, tokens = tokens + ? WHERE user_id = ?", (cost, amount, uid))
+    db.commit()
+    _, _, _, _, _, _, new_tokens = get_user(uid)
+    await message.answer(f"✅ Куплено {amount} токенов за {cost} монет.\n☢️ Теперь: {new_tokens}")
 
 
 @dp.message(Command("daily"))
@@ -531,12 +712,12 @@ async def daily_cmd(message: types.Message):
             await message.answer(f"⏳ Ты уже забрал награду.\nПриходи через: {hours} ч {mins} мин")
             return
     cur.execute(
-        "UPDATE users SET hw_balance = hw_balance + ?, last_daily = ? WHERE user_id = ?",
-        (DAILY_CANDY, datetime.now().isoformat(), uid)
+        "UPDATE users SET tokens = tokens + ?, last_daily = ? WHERE user_id = ?",
+        (DAILY_TOKENS, datetime.now().isoformat(), uid)
     )
     db.commit()
-    _, _, _, _, hw, _ = get_user(uid)
-    await message.answer(f"🎁 Ежедневная награда: +{DAILY_CANDY} 🍬\n🍬 Теперь у тебя: {hw}\n\nСледующая через 24 часа.")
+    _, _, _, _, _, _, tokens = get_user(uid)
+    await message.answer(f"🎁 Ежедневная награда: +{DAILY_TOKENS} ☢️ токенов\n☢️ Теперь у тебя: {tokens}\n\nСледующая через 24 часа.")
 
 
 @dp.message(Command("mycards"))
@@ -557,6 +738,19 @@ async def mycards(message: types.Message):
 
 
 # ==================== DEV КОМАНДЫ ====================
+@dp.message(Command("dev"))
+async def dev_toggle(message: types.Message):
+    uid = message.from_user.id
+    if uid != DEV_ID:
+        return
+    if uid in dev_mode:
+        dev_mode.remove(uid)
+        await message.answer("🔴 Dev-режим ВЫКЛючен.\n`/card` работает как обычно.")
+    else:
+        dev_mode.add(uid)
+        await message.answer("🟢 Dev-режим ВКЛючен!\n`/card` выдаёт только топовые редкости и без кулдауна.")
+
+
 @dp.message(Command("give"))
 async def give_card(message: types.Message):
     uid = message.from_user.id
@@ -608,14 +802,14 @@ async def setmoney(message: types.Message):
     await message.answer(f"✅ Баланс установлен: {amount} монет")
 
 
-@dp.message(Command("setcandy"))
-async def setcandy(message: types.Message):
+@dp.message(Command("settokens"))
+async def settokens(message: types.Message):
     uid = message.from_user.id
     if uid != DEV_ID:
         return
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer("Использование: /setcandy Сумма")
+        await message.answer("Использование: /settokens Сумма")
         return
     try:
         amount = int(args[1])
@@ -623,9 +817,9 @@ async def setcandy(message: types.Message):
         await message.answer("❌ Введи число.")
         return
     get_user(uid, message.from_user.username)
-    cur.execute("UPDATE users SET hw_balance = ? WHERE user_id = ?", (amount, uid))
+    cur.execute("UPDATE users SET tokens = ? WHERE user_id = ?", (amount, uid))
     db.commit()
-    await message.answer(f"✅ Конфет установлено: {amount}")
+    await message.answer(f"✅ Токенов установлено: {amount}")
 
 
 # ==================== ПЕРЕДАЧА ДЕНЕГ ====================
@@ -654,7 +848,7 @@ async def send_money(message: types.Message):
     if tid == uid:
         await message.answer("❌ Себе нельзя.")
         return
-    balance, _, _, _, _, _ = get_user(uid, message.from_user.username)
+    balance, _, _, _, _, _, _ = get_user(uid, message.from_user.username)
     if balance < amount:
         await message.answer(f"❌ Не хватает. У тебя {balance}.")
         return
@@ -710,7 +904,6 @@ async def casino_close(call: types.CallbackQuery):
     await call.answer()
 
 
-# ---- COLOR DICE ----
 @dp.callback_query(F.data.startswith("casino_color_"))
 async def casino_color(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
@@ -752,7 +945,6 @@ async def color_chosen(call: types.CallbackQuery):
     await call.answer()
 
 
-# ---- МИНЁР ----
 @dp.callback_query(F.data.startswith("casino_miner_"))
 async def casino_miner(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
@@ -893,8 +1085,11 @@ async def miner_open(call: types.CallbackQuery):
             try:
                 cd = next((c for c in cards if c["name"] == "Топ 1 Минёр"), None)
                 if cd:
-                    photo = FSInputFile(cd["file"])
-                    await call.message.answer_photo(photo, caption=f"🎁 *Награда!*\n\n🎴 {cd['name']}\n{cd['rarity']} | 💰 {cd['price']}", parse_mode="Markdown")
+                    reward_caption = f"🎁 *Награда!*\n\n🎴 {cd['name']}\n{cd['rarity']} | 💰 {cd['price']}"
+                    ok = await send_reveal(call.message, cd, cd["rarity"], reward_caption, parse_mode="Markdown")
+                    if not ok:
+                        photo = FSInputFile(cd["file"])
+                        await call.message.answer_photo(photo, caption=reward_caption, parse_mode="Markdown")
             except Exception:
                 pass
         del miner_games[uid]
@@ -939,7 +1134,6 @@ async def miner_cashout(call: types.CallbackQuery):
     await call.answer(f"Получено {win}!")
 
 
-# ---- ОРЁЛ И РЕШКА ----
 @dp.callback_query(F.data.startswith("casino_coin_"))
 async def casino_coin(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
@@ -987,7 +1181,6 @@ async def coin_tails(call: types.CallbackQuery):
     await call.answer()
 
 
-# ---- КОЛЕСО МОНСТРОВ ----
 @dp.callback_query(F.data.startswith("casino_wheel_"))
 async def casino_wheel(call: types.CallbackQuery):
     uid = int(call.data.split("_")[2])
@@ -1024,7 +1217,230 @@ async def wheel_bet_request(call: types.CallbackQuery):
     await call.answer()
 
 
-# ==================== ПРОСМОТР КАРТОЧЕК /cards ====================
+# ==================== RADIOACTIVE (ДОХОДЯГИ) ====================
+def rad_menu_kb(uid):
+    _, _, _, _, _, _, tokens = get_user(uid)
+    rows = []
+    for case_name in RAD_CASES:
+        price = rad_case_price(uid, case_name)
+        rows.append([InlineKeyboardButton(
+            text=f"{case_name} — {price} ☢️",
+            callback_data=f"rad_open_{case_name}_{uid}"
+        )])
+    rows.append([InlineKeyboardButton(text="💱 Купить токены", callback_data=f"rad_conv_{uid}")])
+    rows.append([InlineKeyboardButton(text="🔙 Закрыть", callback_data=f"rad_close_{uid}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@dp.message(Command("radioactive"))
+async def radioactive_menu(message: types.Message):
+    uid = message.from_user.id
+    username = message.from_user.username or message.from_user.full_name or "Игрок"
+    balance, _, _, _, _, _, tokens = get_user(uid, message.from_user.username)
+    has_an = has_always_near(uid)
+    an_note = "\n🕳 *«Всегда рядом» в инвентаре — скидка −20% на все кейсы!*" if has_an else ""
+    caption = (
+        f"☢️ *Доходяги* — @{username}\n\n"
+        f"🟢 Токсичный ивент. Кейсы с мутантами.\n\n"
+        f"💰 Монет: {balance}\n"
+        f"☢️ Токенов: {tokens}\n\n"
+        f"*Выбирай кейс:*{an_note}"
+    )
+    try:
+        photo = FSInputFile("ChatGPT Image 8 окт. 2026 г., 00_05_19.png")
+        await message.answer_photo(photo, caption=caption, reply_markup=rad_menu_kb(uid), parse_mode="Markdown")
+    except Exception:
+        await message.answer(caption, reply_markup=rad_menu_kb(uid), parse_mode="Markdown")
+
+
+@dp.callback_query(F.data.startswith("rad_close_"))
+async def rad_close(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("rad_back_"))
+async def rad_back(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    username = call.from_user.username or call.from_user.full_name or "Игрок"
+    balance, _, _, _, _, _, tokens = get_user(uid)
+    has_an = has_always_near(uid)
+    an_note = "\n🕳 *«Всегда рядом» в инвентаре — скидка −20%!*" if has_an else ""
+    caption = (
+        f"☢️ *Доходяги* — @{username}\n\n"
+        f"💰 Монет: {balance}\n☢️ Токенов: {tokens}\n\n"
+        f"*Выбирай кейс:*{an_note}"
+    )
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    try:
+        photo = FSInputFile("ChatGPT Image 8 окт. 2026 г., 00_05_19.png")
+        await call.message.answer_photo(photo, caption=caption, reply_markup=rad_menu_kb(uid), parse_mode="Markdown")
+    except Exception:
+        await call.message.answer(caption, reply_markup=rad_menu_kb(uid), parse_mode="Markdown")
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("rad_conv_"))
+async def rad_convert_menu(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    balance, _, _, _, _, _, tokens = get_user(uid)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="☢️ Купить токены", callback_data=f"rad_buy_tokens_{uid}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data=f"rad_back_{uid}")],
+    ])
+    text = (
+        f"💱 *Купить токены* — @{call.from_user.username or 'Игрок'}\n\n"
+        f"Курс: 1 ☢️ = {TOKEN_RATE} монет\n\n"
+        f"💰 Монет: {balance}\n☢️ Токенов: {tokens}\n\n"
+        f"Напиши число — сколько токенов купить.\nНапример: `5` (за 500 000 монет)"
+    )
+    try:
+        await call.message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
+    except Exception:
+        await call.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("rad_buy_tokens_"))
+async def rad_buy_tokens(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[3])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    rad_convert_games[uid] = {"state": "wait_tokens"}
+    try:
+        await call.message.edit_text(
+            f"☢️ Напиши сколько токенов купить (1 токен = {TOKEN_RATE} монет).\nОтмена — /cancel"
+        )
+    except Exception:
+        await call.message.edit_caption(
+            caption=f"☢️ Напиши сколько токенов купить (1 токен = {TOKEN_RATE} монет).\nОтмена — /cancel"
+        )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("rad_open_"))
+async def rad_open_case(call: types.CallbackQuery):
+    parts = call.data.split("_", 3)
+    case_name = parts[2] + "_" + parts[3] if len(parts) > 4 else parts[2]
+    uid = int(call.data.rsplit("_", 1)[1])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+
+    case_name_full = case_name
+    if case_name_full not in RAD_CASES:
+        for cn in RAD_CASES:
+            if cn.replace(" ", "_") == case_name_full:
+                case_name_full = cn
+                break
+        else:
+            await call.answer("Ошибка кейса", show_alert=True)
+            return
+
+    cur.execute("SELECT last_time FROM rad_cooldowns WHERE user_id = ? AND case_name = ?", (uid, case_name_full))
+    row = cur.fetchone()
+    if row:
+        last_dt = datetime.fromisoformat(row[0])
+        cd = RAD_CASES[case_name_full]["cooldown_min"]
+        elapsed = datetime.now() - last_dt
+        if elapsed < timedelta(minutes=cd):
+            left = timedelta(minutes=cd) - elapsed
+            await call.answer(f"⏳ Кулдаун: {format_cooldown(int(left.total_seconds()))}", show_alert=True)
+            return
+
+    price = rad_case_price(uid, case_name_full)
+    _, _, _, _, _, _, tokens = get_user(uid)
+    if tokens < price:
+        await call.answer(f"❌ Нужно {price} ☢️, у тебя {tokens}", show_alert=True)
+        return
+
+    cur.execute("UPDATE users SET tokens = tokens - ? WHERE user_id = ?", (price, uid))
+    cur.execute(
+        "INSERT OR REPLACE INTO rad_cooldowns (user_id, case_name, last_time) VALUES (?, ?, ?)",
+        (uid, case_name_full, datetime.now().isoformat())
+    )
+    db.commit()
+
+    card_data, rarity = roll_rad_card(case_name_full)
+    cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, card_data["name"]))
+    db.commit()
+
+    _, _, _, _, _, _, tokens_new = get_user(uid)
+    caption = (
+        f"☢️ *{case_name_full}*\n\n"
+        f"🎉 Тебе выпала карточка!\n\n"
+        f"🎴 *{card_data['name']}*\n"
+        f"Редкость: {rarity}\n"
+        f"💰 Цена: {card_data['price']} монет\n\n"
+        f"☢️ Осталось токенов: {tokens_new}"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="☢️ Открыть ещё", callback_data=f"rad_menu_{uid}")],
+        [InlineKeyboardButton(text="🔙 Меню", callback_data=f"rad_back_{uid}")],
+    ])
+
+    # сразу отвечаем на callback, пока рендерится анимация
+    await call.answer("☢️ Открываем кейс...")
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    # анимация открытия: тема зависит от редкости карты
+    ok = await send_reveal(call.message, card_data, rarity, caption, reply_markup=kb, parse_mode="Markdown")
+    if not ok:
+        try:
+            photo = FSInputFile(card_data["file"])
+            await call.message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await call.message.answer(caption, reply_markup=kb, parse_mode="Markdown")
+
+
+@dp.callback_query(F.data.startswith("rad_menu_"))
+async def rad_menu_cb(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    username = call.from_user.username or call.from_user.full_name or "Игрок"
+    balance, _, _, _, _, _, tokens = get_user(uid)
+    has_an = has_always_near(uid)
+    an_note = "\n🕳 *Скидка −20%!*" if has_an else ""
+    caption = (
+        f"☢️ *Доходяги* — @{username}\n\n"
+        f"💰 Монет: {balance}\n☢️ Токенов: {tokens}\n\n"
+        f"*Выбирай кейс:*{an_note}"
+    )
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    try:
+        photo = FSInputFile("ChatGPT Image 8 окт. 2026 г., 00_05_19.png")
+        await call.message.answer_photo(photo, caption=caption, reply_markup=rad_menu_kb(uid), parse_mode="Markdown")
+    except Exception:
+        await call.message.answer(caption, reply_markup=rad_menu_kb(uid), parse_mode="Markdown")
+    await call.answer()
+
+
+# ==================== ПРОСМОТР КАРТОЧЕК ====================
 @dp.message(Command("cards"))
 async def cards_view(message: types.Message):
     uid = message.from_user.id
@@ -1167,7 +1583,7 @@ async def card_show(call: types.CallbackQuery):
         return
     cur.execute("SELECT COUNT(*) FROM inventory WHERE user_id = ? AND card_name = ?", (uid, full_name))
     cnt = cur.fetchone()[0]
-    caption = f"🎴 *{card_data['name']}*\nРедкость: {card_data.get('rarity', '🎃 Хеллоуинская')}\n💰 Цена: {card_data['price']}\n📦 У тебя: {cnt} шт."
+    caption = f"🎴 *{card_data['name']}*\nРедкость: {card_data.get('rarity', '—')}\n💰 Цена: {card_data['price']}\n📦 У тебя: {cnt} шт."
     try:
         photo = FSInputFile(card_data["file"])
         await call.message.answer_photo(photo, caption=caption, parse_mode="Markdown")
@@ -1527,7 +1943,8 @@ async def tr_dec(call: types.CallbackQuery):
 async def cancel_game(message: types.Message):
     uid = message.from_user.id
     cancelled = False
-    for d in (color_games, miner_games, coin_games, wheel_games, trade_games, cards_view_games):
+    for d in (color_games, miner_games, coin_games, wheel_games,
+              trade_games, cards_view_games, rad_convert_games):
         if uid in d:
             del d[uid]
             cancelled = True
@@ -1552,7 +1969,7 @@ async def profile(message: types.Message):
     else:
         tid = message.from_user.id
         tun = message.from_user.username
-        balance, _, level, reg, _, _ = get_user(tid, tun)
+        balance, _, level, reg, _, _, _ = get_user(tid, tun)
     cur.execute("SELECT COUNT(*) FROM inventory WHERE user_id = ?", (tid,))
     total = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM users WHERE balance > ?", (balance,))
@@ -1600,15 +2017,25 @@ async def sell(message: types.Message):
         return
     real_name = row[1]
     hw = find_hw_card(real_name)
+    rad = find_rad_card(real_name)
     cd = next((c for c in cards if c["name"].lower() == real_name.lower()), None)
-    if hw and not cd:
+    if real_name == "Всегда рядом":
+        await message.answer("❌ «Всегда рядом» нельзя продать. Только трейд.")
+        return
+    if hw:
         cur.execute("DELETE FROM inventory WHERE rowid = ?", (row[0],))
-        cur.execute("UPDATE users SET hw_balance = hw_balance + ? WHERE user_id = ?", (hw["price"], uid))
+        cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (hw["price"], uid))
         db.commit()
-        await message.answer(f"✅ Продано: {hw['name']} за {hw['price']} 🍬")
+        await message.answer(f"✅ Продано: {hw['name']} за {hw['price']} монет")
+        return
+    if rad:
+        cur.execute("DELETE FROM inventory WHERE rowid = ?", (row[0],))
+        cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (rad["price"], uid))
+        db.commit()
+        await message.answer(f"✅ Продано: {rad['name']} за {rad['price']} монет")
         return
     if not cd:
-        await message.answer("❌ Неизвестная.")
+        await message.answer("❌ Неизвестная карта.")
         return
     cur.execute("DELETE FROM inventory WHERE rowid = ?", (row[0],))
     cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (cd["price"], uid))
@@ -1624,26 +2051,27 @@ async def sellall(message: types.Message):
     if not rows:
         await message.answer("❌ Нет карточек.")
         return
-    money_total = 0
-    candy_total = 0
+    total_sum = 0
     text = "💰 *Будет продано:*\n\n"
+    skipped = []
     for name, cnt in rows:
-        cd = next((c for c in cards if c["name"] == name), None)
-        hw = find_hw_card(name)
-        if cd:
-            subtotal = cd["price"] * cnt
-            money_total += subtotal
-            text += f"• {name} × {cnt} = {subtotal} монет\n"
-        elif hw:
-            subtotal = hw["price"] * cnt
-            candy_total += subtotal
-            text += f"• {name} × {cnt} = {subtotal} 🍬\n"
-    text += f"\n💵 *Монет: {money_total}*\n🍬 *Конфет: {candy_total}*"
+        if name == "Всегда рядом":
+            skipped.append(name)
+            continue
+        cd = find_any_card(name)
+        if not cd:
+            continue
+        subtotal = cd["price"] * cnt
+        total_sum += subtotal
+        text += f"• {name} × {cnt} = {subtotal} монет\n"
+    text += f"\n💵 *Итого: {total_sum} монет*"
+    if skipped:
+        text += f"\n\n⚠️ Не продаются: {', '.join(skipped)}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Да", callback_data="sellall_yes"),
         InlineKeyboardButton(text="❌ Нет", callback_data="sellall_no"),
     ]])
-    sell_games[uid] = {"money": money_total, "candy": candy_total}
+    sell_games[uid] = {"total": total_sum}
     await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 
@@ -1654,10 +2082,20 @@ async def sellall_yes(call: types.CallbackQuery):
     if not g:
         await call.answer("Уже продано.", show_alert=True)
         return
-    cur.execute("DELETE FROM inventory WHERE user_id = ?", (uid,))
-    cur.execute("UPDATE users SET balance = balance + ?, hw_balance = hw_balance + ? WHERE user_id = ?", (g["money"], g["candy"], uid))
+    cur.execute("SELECT rowid, card_name FROM inventory WHERE user_id = ?", (uid,))
+    rows = cur.fetchall()
+    total = 0
+    for rowid, name in rows:
+        if name == "Всегда рядом":
+            continue
+        cd = find_any_card(name)
+        if not cd:
+            continue
+        total += cd["price"]
+        cur.execute("DELETE FROM inventory WHERE rowid = ?", (rowid,))
+    cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (total, uid))
     db.commit()
-    await call.message.edit_text(f"✅ Продано!\n💰 +{g['money']} монет\n🍬 +{g['candy']} конфет")
+    await call.message.edit_text(f"✅ Продано за {total} монет (кроме «Всегда рядом»).")
     await call.answer("Готово!")
 
 
@@ -1671,7 +2109,7 @@ async def sellall_no(call: types.CallbackQuery):
 @dp.message(Command("upgrade"))
 async def upgrade(message: types.Message):
     uid = message.from_user.id
-    balance, _, level, _, _, _ = get_user(uid, message.from_user.username)
+    balance, _, level, _, _, _, _ = get_user(uid, message.from_user.username)
     if level >= MAX_LEVEL:
         await message.answer("⛔ Максимум 3.")
         return
@@ -1693,7 +2131,7 @@ async def upgrade(message: types.Message):
 @dp.callback_query(F.data.startswith("upg_"))
 async def upg_cb(call: types.CallbackQuery):
     uid = call.from_user.id
-    balance, _, level, _, _, _ = get_user(uid, call.from_user.username)
+    balance, _, level, _, _, _, _ = get_user(uid, call.from_user.username)
     if call.data == "upg_no":
         await call.message.edit_text("❌ Отменено.")
         await call.answer()
@@ -1715,22 +2153,19 @@ async def upg_cb(call: types.CallbackQuery):
     await call.answer("Активировано!")
 
 
-# ==================== СБРОС ИГРОКОВ (только для DEV_ID) ====================
-# ВАЖНО: этот блок должен стоять ВЫШЕ обработчиков ввода числа и текста,
-# иначе они перехватят команды.
+# ==================== СБРОС ИГРОКОВ (DEV) ====================
 def reset_user(uid, money_only=False):
-    """money_only=True — обнуляет только монеты и конфеты.
-    Иначе — полный сброс: карты, монеты, конфеты, уровень и кулдауны."""
     if money_only:
-        cur.execute("UPDATE users SET balance = 0, hw_balance = 0 WHERE user_id = ?", (uid,))
+        cur.execute("UPDATE users SET balance = 0, hw_balance = 0, tokens = 0 WHERE user_id = ?", (uid,))
     else:
         cur.execute(
-            "UPDATE users SET balance = 0, hw_balance = 0, level = 1, "
+            "UPDATE users SET balance = 0, hw_balance = 0, tokens = 0, level = 1, "
             "last_card = NULL, last_daily = NULL, last_trade = NULL WHERE user_id = ?", (uid,))
         cur.execute("DELETE FROM inventory WHERE user_id = ?", (uid,))
+    cur.execute("DELETE FROM rad_cooldowns WHERE user_id = ?", (uid,))
     db.commit()
     for d in (color_games, miner_games, coin_games, wheel_games,
-              trade_games, cards_view_games, sell_games):
+              trade_games, cards_view_games, sell_games, rad_convert_games):
         d.pop(uid, None)
 
 
@@ -1758,8 +2193,8 @@ async def reset_cmd(message: types.Message):
     if not tokens:
         await message.answer(
             "Использование:\n"
-            "/reset @user1 @user2 — полный сброс (карты, монеты, конфеты, уровень)\n"
-            "/resetmoney @user — только монеты и конфеты\n"
+            "/reset @user1 @user2 — полный сброс\n"
+            "/resetmoney @user — монеты/конфеты/токены\n"
             "/resetall — сбросить ВСЕХ"
         )
         return
@@ -1783,7 +2218,7 @@ async def resetmoney_cmd(message: types.Message):
     ids, missing = find_targets(tokens)
     for u in ids:
         reset_user(u, money_only=True)
-    text = f"✅ Монеты и конфеты обнулены у: {len(ids)}"
+    text = f"✅ Деньги обнулены у: {len(ids)}"
     if missing:
         text += f"\n❌ Не найдены: {', '.join(map(str, missing))}"
     await message.answer(text)
@@ -1799,7 +2234,7 @@ async def resetall_cmd(message: types.Message):
         InlineKeyboardButton(text="⚠️ ДА, обнулить всех", callback_data="resetall_yes"),
         InlineKeyboardButton(text="❌ Отмена", callback_data="resetall_no"),
     ]])
-    await message.answer(f"⚠️ Это удалит карты, монеты, конфеты и уровни у {n} игроков. Точно?", reply_markup=kb)
+    await message.answer(f"⚠️ Удалит карты, монеты, токены, уровни у {n} игроков. Точно?", reply_markup=kb)
 
 
 @dp.callback_query(F.data == "resetall_yes")
@@ -1823,22 +2258,39 @@ async def resetall_no(call: types.CallbackQuery):
     await call.answer()
 
 
-# ==================== ВВОД ЧИСЛА И ТЕКСТА ====================
-# ВАЖНО: эти обработчики ДОЛЖНЫ быть в самом конце, после всех команд,
-# иначе они перехватят сообщения раньше команд /profile, /top, /sell и т.д.
+# ==================== ВВОД ЧИСЛА ====================
 @dp.message(F.text.regexp(r"^\d+$"))
 async def handle_number(message: types.Message):
     uid = message.from_user.id
     username = message.from_user.username or message.from_user.full_name or "Игрок"
 
-    # ---------- Color Dice (с мерцанием перед каждым цветом) ----------
+    # ---------- Покупка токенов ----------
+    conv = rad_convert_games.get(uid)
+    if conv and conv.get("state") == "wait_tokens":
+        amount = int(message.text)
+        if amount <= 0:
+            await message.answer("❌ Больше 0.")
+            return
+        cost = amount * TOKEN_RATE
+        balance, _, _, _, _, _, tokens = get_user(uid, message.from_user.username)
+        if balance < cost:
+            await message.answer(f"❌ Нужно {cost} монет, у тебя {balance}.")
+            return
+        cur.execute("UPDATE users SET balance = balance - ?, tokens = tokens + ? WHERE user_id = ?", (cost, amount, uid))
+        db.commit()
+        del rad_convert_games[uid]
+        _, _, _, _, _, _, new_tokens = get_user(uid)
+        await message.answer(f"✅ Куплено {amount} ☢️ за {cost} монет.\n☢️ Теперь: {new_tokens}")
+        return
+
+    # ---------- Color Dice ----------
     game = color_games.get(uid)
     if game and game.get("state") == "wait_bet":
         bet = int(message.text)
         if bet <= 0:
             await message.answer("❌ Ставка > 0.")
             return
-        balance, _, _, _, _, _ = get_user(uid, message.from_user.username)
+        balance, _, _, _, _, _, _ = get_user(uid, message.from_user.username)
         if balance < bet:
             await message.answer(f"❌ Не хватает. У тебя {balance}.")
             return
@@ -1857,12 +2309,10 @@ async def handle_number(message: types.Message):
         await asyncio.sleep(0.8)
         progressive = []
         for c in result:
-            # мерцание: эмодзи быстро меняются
             for _ in range(2):
                 flick = random.choice(COLORS)["emoji"]
                 await safe_edit(msg, f"{head}\n\n{' '.join(progressive + [flick])}", parse_mode="Markdown")
                 await asyncio.sleep(0.4)
-            # цвет фиксируется
             progressive.append(c["emoji"])
             await safe_edit(msg, f"{head}\n\n{' '.join(progressive)}", parse_mode="Markdown")
             await asyncio.sleep(0.6)
@@ -1886,14 +2336,14 @@ async def handle_number(message: types.Message):
         await safe_edit(msg, rt, reply_markup=kb, parse_mode="Markdown")
         return
 
-    # Минёр
+    # ---------- Минёр ----------
     game = miner_games.get(uid)
     if game and game.get("state") == "wait_bet":
         bet = int(message.text)
         if bet <= 0:
             await message.answer("❌ Ставка > 0.")
             return
-        balance, _, _, _, _, _ = get_user(uid, message.from_user.username)
+        balance, _, _, _, _, _, _ = get_user(uid, message.from_user.username)
         if balance < bet:
             await message.answer(f"❌ Не хватает. У тебя {balance}.")
             return
@@ -1908,14 +2358,14 @@ async def handle_number(message: types.Message):
         )
         return
 
-    # ---------- Колесо монстров (лента замедляется и встаёт на выпавшем) ----------
+    # ---------- Колесо монстров ----------
     game = wheel_games.get(uid)
     if game and game.get("state") == "wait_bet":
         bet = int(message.text)
         if bet <= 0:
             await message.answer("❌ Ставка > 0.")
             return
-        balance, _, _, _, _, _ = get_user(uid, message.from_user.username)
+        balance, _, _, _, _, _, _ = get_user(uid, message.from_user.username)
         if balance < bet:
             await message.answer(f"❌ Не хватает. У тебя {balance}.")
             return
@@ -1940,10 +2390,7 @@ async def handle_number(message: types.Message):
         if win > 0:
             cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
             db.commit()
-        head = (
-            f"{wheel_head}\n\n"
-            f"Выпал: {seg['emoji']} *{seg['name']}* (×{seg['mult']})\n\n"
-        )
+        head = f"{wheel_head}\n\nВыпал: {seg['emoji']} *{seg['name']}* (×{seg['mult']})\n\n"
         if win > bet:
             result = f"🎉 *Выиграл {win} монет!* (+{win - bet})"
         elif win > 0:
@@ -1957,14 +2404,14 @@ async def handle_number(message: types.Message):
         await safe_edit(msg, head + result, reply_markup=kb, parse_mode="Markdown")
         return
 
-    # ---------- Орёл и Решка (монетка крутится в воздухе) ----------
+    # ---------- Орёл и Решка ----------
     game = coin_games.get(uid)
     if game and game.get("state") == "wait_bet":
         bet = int(message.text)
         if bet <= 0:
             await message.answer("❌ Ставка > 0.")
             return
-        balance, _, _, _, _, _ = get_user(uid, message.from_user.username)
+        balance, _, _, _, _, _, _ = get_user(uid, message.from_user.username)
         if balance < bet:
             await message.answer(f"❌ Не хватает. У тебя {balance}.")
             return
@@ -2007,7 +2454,6 @@ async def handle_text(message: types.Message):
     uid = message.from_user.id
     if message.text.startswith("/"):
         return
-    # Поиск в /cards
     g = cards_view_games.get(uid)
     if g and g.get("state") == "wait_search":
         g["filter"] = message.text.strip()
@@ -2015,7 +2461,6 @@ async def handle_text(message: types.Message):
         g["state"] = None
         await send_cards_page(message, uid)
         return
-    # Поиск в трейде
     g = trade_games.get(uid)
     if g and g.get("state") == "wait_search_my":
         query = message.text.strip().lower()
@@ -2032,7 +2477,6 @@ async def handle_text(message: types.Message):
 
 # ==================== ЗАПУСК ====================
 async def main():
-    # заранее собираем видео выпадения в фоне, пока бот уже принимает команды
     prerender_task = asyncio.create_task(prerender_videos())
     try:
         await dp.start_polling(bot)
