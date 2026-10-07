@@ -439,15 +439,18 @@ def _video_path(card_data, rarity_label):
     return os.path.join(VIDEO_DIR, key + ".mp4")
 
 
-async def play_reveal(message, card_data, rarity_label):
-    """Показывает анимацию выпадения. Готовое видео кешируется на диске.
-    Если что-то пошло не так — просто пропускает, карта всё равно покажется."""
+video_file_ids = {}   # после первой отправки Telegram запоминает видео — дальше оно уходит мгновенно
+
+
+async def send_reveal(message, card_data, rarity_label, caption, reply_markup=None, parse_mode=None):
+    """Отправляет ОДНО сообщение: видео выпадения + подпись + кнопки.
+    Возвращает True, если получилось. Если видео не вышло — False (тогда шлём обычное фото)."""
     if not USE_REVEAL_VIDEO:
-        return
+        return False
     status = None
     try:
         path = _video_path(card_data, rarity_label)
-        if not os.path.exists(path):
+        if path not in video_file_ids and not os.path.exists(path):
             status = await message.answer("🎁 Открываем...")
             async with render_sem:
                 if not os.path.exists(path):
@@ -455,17 +458,21 @@ async def play_reveal(message, card_data, rarity_label):
                         render_card_video, card_data["file"], path,
                         card_data["name"], rarity_label, FONT_PATH
                     )
+        media = video_file_ids.get(path) or FSInputFile(path)
+        sent = await message.answer_animation(
+            media, caption=caption, reply_markup=reply_markup,
+            parse_mode=parse_mode, width=VIDEO_W, height=VIDEO_H
+        )
+        if sent.animation:
+            video_file_ids[path] = sent.animation.file_id
+        elif sent.video:
+            video_file_ids[path] = sent.video.file_id
+        if status:
             try:
                 await status.delete()
             except Exception:
                 pass
-            status = None
-        anim = await message.answer_animation(FSInputFile(path), width=VIDEO_W, height=VIDEO_H)
-        await asyncio.sleep(VIDEO_SECONDS + 0.4)
-        try:
-            await anim.delete()
-        except Exception:
-            pass
+        return True
     except Exception as e:
         print("Ошибка видео выпадения:", e)
         if status:
@@ -473,6 +480,7 @@ async def play_reveal(message, card_data, rarity_label):
                 await status.delete()
             except Exception:
                 pass
+        return False
 
 
 # ==================== МАГАЗИН ДРАКУЛЫ (логика) ====================
@@ -642,18 +650,17 @@ async def card(message: types.Message):
         inv_id = cur.fetchone()[0]
         drawn.append((c, inv_id))
 
-    # Видео показываем для самой дорогой выпавшей карты
-    best = max(drawn, key=lambda x: x[0]["price"])[0]
-    await play_reveal(message, best, best["rarity"])
-
+    # Для каждой карты — одно сообщение: видео + подпись + кнопки
     for c, inv_id in drawn:
         caption = f"@{username}, вам выпала:\n🎴 {c['name']}\n{c['rarity']} | 💰 Цена: {c['price']} монет"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"💰 Продать: {c['name']} ({c['price']})", callback_data=f"sell_card_{inv_id}_{c['price']}")],
             [InlineKeyboardButton(text="🎰 Casino", callback_data=f"open_casino_{uid}")],
         ])
-        photo = FSInputFile(c["file"])
-        await message.answer_photo(photo, caption=caption, reply_markup=kb)
+        ok = await send_reveal(message, c, c["rarity"], caption, reply_markup=kb)
+        if not ok:
+            photo = FSInputFile(c["file"])
+            await message.answer_photo(photo, caption=caption, reply_markup=kb)
 
 
 @dp.callback_query(F.data.startswith("sell_card_"))
@@ -1403,9 +1410,6 @@ async def hw_open_case(call: types.CallbackQuery):
         except Exception:
             pass
 
-        # видео выпадения
-        await play_reveal(call.message, got_card, rarity)
-
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎁 Открыть ещё", callback_data=f"hw_open_{case_type}_{uid}")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_cases_{uid}")],
@@ -1414,11 +1418,14 @@ async def hw_open_case(call: types.CallbackQuery):
             f"{CASE_NAMES[case_type]} *кейс* — @{username}\n\n🎉 Тебе выпала карточка!\n\n"
             f"🎴 *{got_card['name']}*\nРедкость: {rarity}\n💰 Цена: {got_card['price']} 🍬\n\n🍬 Осталось: {new_hw}"
         )
-        try:
-            photo = FSInputFile(got_card["file"])
-            await call.message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
-        except Exception:
-            await call.message.answer(caption, reply_markup=kb, parse_mode="Markdown")
+        # одно сообщение: видео + подпись + кнопки
+        ok = await send_reveal(call.message, got_card, rarity, caption, reply_markup=kb, parse_mode="Markdown")
+        if not ok:
+            try:
+                photo = FSInputFile(got_card["file"])
+                await call.message.answer_photo(photo, caption=caption, reply_markup=kb, parse_mode="Markdown")
+            except Exception:
+                await call.message.answer(caption, reply_markup=kb, parse_mode="Markdown")
     finally:
         opening_users.discard(uid)
 
