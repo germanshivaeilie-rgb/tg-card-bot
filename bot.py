@@ -190,6 +190,17 @@ trade_games = {}
 cards_view_games = {}
 sell_games = {}
 
+wheel_games = {}
+
+WHEEL_SEGMENTS = [
+    {"emoji": "👻", "name": "Призрак",      "mult": 0,   "weight": 45},
+    {"emoji": "🕷", "name": "Паук",         "mult": 0.5, "weight": 22},
+    {"emoji": "🦇", "name": "Летучая мышь", "mult": 1.5, "weight": 16},
+    {"emoji": "🧛", "name": "Вампир",       "mult": 2,   "weight": 11},
+    {"emoji": "🎃", "name": "Тыква-босс",   "mult": 5,   "weight": 5},
+    {"emoji": "👑", "name": "Король тыкв",  "mult": 10,  "weight": 1},
+]
+
 db = sqlite3.connect("game.db")
 cur = db.cursor()
 cur.execute("""CREATE TABLE IF NOT EXISTS users (
@@ -604,6 +615,7 @@ def casino_menu_kb(uid):
         [InlineKeyboardButton(text="🎲 Color Dice", callback_data=f"casino_color_{uid}")],
         [InlineKeyboardButton(text="💣 Минёр", callback_data=f"casino_miner_{uid}")],
         [InlineKeyboardButton(text="🪙 Орёл и Решка", callback_data=f"casino_coin_{uid}")],
+        [InlineKeyboardButton(text="👹 Колесо монстров", callback_data=f"casino_wheel_{uid}")],
         [InlineKeyboardButton(text="🔙 Закрыть", callback_data=f"casino_close_{uid}")],
     ])
 
@@ -912,6 +924,43 @@ async def coin_tails(call: types.CallbackQuery):
     coin_games[uid] = {"choice": "tails", "state": "wait_bet"}
     await call.message.edit_text(
         "🪙 Твой выбор: 🪙 Монета\n\n💰 Напиши сумму ставки числом (например 100).\nОтмена — /cancel"
+    )
+    await call.answer()
+
+
+# ---- КОЛЕСО МОНСТРОВ ----
+@dp.callback_query(F.data.startswith("casino_wheel_"))
+async def casino_wheel(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    lines = []
+    for s in WHEEL_SEGMENTS:
+        lines.append(f"{s['emoji']} {s['name']} — ×{s['mult']} ({s['weight']}%)")
+    rules = "\n".join(lines)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 Сделать ставку", callback_data=f"wheel_bet_{uid}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data=f"casino_back_{uid}")],
+    ])
+    await call.message.edit_text(
+        f"👹 *Колесо монстров*\n\nКрутишь колесо, и тебе выпадает монстр.\n"
+        f"Он решает, сколько ты выиграешь.\n\n{rules}\n\nГотов рискнуть?",
+        reply_markup=kb, parse_mode="Markdown"
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("wheel_bet_"))
+async def wheel_bet_request(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    wheel_games[uid] = {"state": "wait_bet"}
+    await call.message.edit_text(
+        "👹 *Колесо монстров*\n\n💰 Напиши сумму ставки числом (например 100).\nОтмена — /cancel",
+        parse_mode="Markdown"
     )
     await call.answer()
 
@@ -1924,6 +1973,9 @@ async def cancel_game(message: types.Message):
     if uid in coin_games:
         del coin_games[uid]
         cancelled = True
+    if uid in wheel_games:
+        del wheel_games[uid]
+        cancelled = True
     if uid in boss_games:
         boss_lock["current"] = None
         boss_cooldowns[uid] = datetime.now()
@@ -2225,6 +2277,50 @@ async def handle_number(message: types.Message):
             f"💣 *Минёр* — @{username}\n💰 Ставка: {bet}\n🟢 Открыто: 0\n📈 Множитель: ×1.0\n💵 Заберёшь: {bet}",
             reply_markup=miner_keyboard([], mines_set, uid), parse_mode="Markdown"
         )
+        return
+
+    # Колесо монстров
+    game = wheel_games.get(uid)
+    if game and game.get("state") == "wait_bet":
+        bet = int(message.text)
+        if bet <= 0:
+            await message.answer("❌ Ставка > 0.")
+            return
+        balance, _, _, _, _, _ = get_user(uid, message.from_user.username)
+        if balance < bet:
+            await message.answer(f"❌ Не хватает. У тебя {balance}.")
+            return
+        cur.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (bet, uid))
+        db.commit()
+        del wheel_games[uid]
+        seg = random.choices(WHEEL_SEGMENTS, weights=[s["weight"] for s in WHEEL_SEGMENTS])[0]
+        msg = await message.answer("👹 Колесо крутится...\n\n🎡")
+        for _ in range(4):
+            frame = " ".join(random.choice(WHEEL_SEGMENTS)["emoji"] for _ in range(3))
+            await msg.edit_text(
+                f"👹 *Колесо монстров* — @{username}\n💰 Ставка: {bet}\n\n🎡 {frame}",
+                parse_mode="Markdown"
+            )
+            await asyncio.sleep(0.8)
+        win = int(bet * seg["mult"])
+        if win > 0:
+            cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (win, uid))
+            db.commit()
+        head = (
+            f"👹 *Колесо монстров* — @{username}\n💰 Ставка: {bet}\n\n"
+            f"Выпал: {seg['emoji']} *{seg['name']}* (×{seg['mult']})\n\n"
+        )
+        if win > bet:
+            result = f"🎉 *Выиграл {win} монет!* (+{win - bet})"
+        elif win > 0:
+            result = f"😬 *Вернулось {win}, потерял {bet - win}.*"
+        else:
+            result = f"💀 *Монстр забрал ставку: -{bet} монет.*"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👹 Крутить снова", callback_data=f"casino_wheel_{uid}")],
+            [InlineKeyboardButton(text="🔙 Casino", callback_data=f"open_casino_{uid}")],
+        ])
+        await msg.edit_text(head + result, reply_markup=kb, parse_mode="Markdown")
         return
 
     # Орёл и Решка
