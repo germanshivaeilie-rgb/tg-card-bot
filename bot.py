@@ -195,7 +195,8 @@ DAILY_CANDY = 1000
 SHOP_REFRESH_MIN = 30
 SHOP_SLOTS = 6
 
-db = sqlite3.connect("game.db")
+DB_PATH = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."), "game.db")
+db = sqlite3.connect(DB_PATH)
 cur = db.cursor()
 cur.execute("""CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
