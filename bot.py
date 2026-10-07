@@ -489,7 +489,7 @@ video_file_ids = {}
 
 
 def _video_path(card_data, rarity_label):
-    key = hashlib.md5(f"{card_data['file']}|{card_data['name']}|{rarity_label}|v3".encode()).hexdigest()
+    key = hashlib.md5(f"{card_data['file']}|{card_data['name']}|{rarity_label}|v4".encode()).hexdigest()
     return os.path.join(VIDEO_DIR, key + ".mp4")
 
 
