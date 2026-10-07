@@ -91,15 +91,6 @@ HW_CARDS = {
         ],
     },
     "ghost": {
-        "🧙 Ведьминская": [
-            {"name": "Ведьминский Еля",   "price": 10000, "file": "ChatGPT Image 6 окт. 2026 г., 11_16_21.png"},
-            {"name": "Ведьминская кошка", "price": 15000, "file": "ChatGPT Image 6 окт. 2026 г., 14_03_47.png"},
-            {"name": "Ведьма неля",       "price": 17000, "file": "ChatGPT Image 6 окт. 2026 г., 14_23_18.png"},
-        ],
-        "🧛 Вампирская": [
-            {"name": "Вампирский хлеб",                 "price": 20000, "file": "ChatGPT Image 6 окт. 2026 г., 10_48_44.png"},
-            {"name": "А хотелось бы ведьминский жезл",  "price": 25000, "file": "ChatGPT Image 6 окт. 2026 г., 14_28_54.png"},
-        ],
         "💀 Скелетная": [
             {"name": "Костяной Губка боб",       "price": 30000, "file": "ChatGPT Image 6 окт. 2026 г., 14_36_53.png"},
             {"name": "Костяной Литвин x Спид",   "price": 40000, "file": "ChatGPT Image 6 окт. 2026 г., 14_42_20.png"},
@@ -121,24 +112,22 @@ CASE_CHANCES = {
         "🧛 Вампирская": 1,
     },
     "skeleton": {
-        "👻 Призрачная": 35,
-        "🧙 Ведьминская": 25,
-        "🧛 Вампирская": 20,
-        "💀 Скелетная": 15,
-        "😈 Демоническая": 5,
+        "👻 Призрачная": 45,
+        "🧙 Ведьминская": 28,
+        "🧛 Вампирская": 17,
+        "💀 Скелетная": 8,
+        "😈 Демоническая": 2,
     },
     "ghost": {
-        "🧙 Ведьминская": 40,
-        "🧛 Вампирская": 30,
-        "💀 Скелетная": 18,
-        "😈 Демоническая": 11.334,
+        "💀 Скелетная": 85,
+        "😈 Демоническая": 14.334,
         "😱 Кошмарная": 0.666,
     },
 }
 
 CASE_PRICES = {
     "pumpkin": 1000,
-    "skeleton": 10000,
+    "skeleton": 30000,
     "ghost": 100000,
 }
 
@@ -201,6 +190,11 @@ WHEEL_SEGMENTS = [
     {"emoji": "👑", "name": "Король тыкв",  "mult": 10,  "weight": 1},
 ]
 
+DAILY_CANDY = 1000
+
+SHOP_REFRESH_MIN = 30
+SHOP_SLOTS = 6
+
 db = sqlite3.connect("game.db")
 cur = db.cursor()
 cur.execute("""CREATE TABLE IF NOT EXISTS users (
@@ -241,6 +235,20 @@ try:
 except sqlite3.OperationalError:
     cur.execute("ALTER TABLE users ADD COLUMN last_trade TEXT")
     db.commit()
+
+try:
+    cur.execute("SELECT last_daily FROM users LIMIT 1")
+except sqlite3.OperationalError:
+    cur.execute("ALTER TABLE users ADD COLUMN last_daily TEXT")
+    db.commit()
+
+cur.execute("""CREATE TABLE IF NOT EXISTS shop_sales (
+    slot INTEGER,
+    idx INTEGER,
+    sold INTEGER DEFAULT 0,
+    PRIMARY KEY (slot, idx)
+)""")
+db.commit()
 
 today = datetime.now().isoformat()
 cur.execute("UPDATE users SET registered_at = ? WHERE registered_at IS NULL", (today,))
@@ -400,6 +408,124 @@ async def make_profile_image(user_id, username, balance, place, level, total_car
     return output
 
 
+# ==================== МАГАЗИН ДРАКУЛЫ (логика) ====================
+def shop_current_slot():
+    return int(datetime.now().timestamp() // (SHOP_REFRESH_MIN * 60))
+
+
+def shop_seconds_left():
+    end_ts = (shop_current_slot() + 1) * SHOP_REFRESH_MIN * 60
+    return max(0, int(end_ts - datetime.now().timestamp()))
+
+
+def shop_all_cards():
+    result = []
+    seen = set()
+    for case_type, rarities in HW_CARDS.items():
+        for rarity, lst in rarities.items():
+            for c in lst:
+                if c["name"] not in seen:
+                    seen.add(c["name"])
+                    result.append(c)
+    return result
+
+
+def shop_build_offers(slot):
+    # Товары считаются из номера получасового слота, поэтому
+    # у всех игроков одинаковые и не меняются при перезапуске бота.
+    rng = random.Random(slot * 7919 + 13)
+    pool = shop_all_cards()
+    picked = rng.sample(pool, SHOP_SLOTS)
+    kinds = ["markup", "normal", "discount", "mega"]
+    weights = [25, 40, 29, 6]
+    offers = []
+    for card in picked:
+        kind = rng.choices(kinds, weights=weights)[0]
+        base = card["price"]
+        if kind == "mega" and base < 10000:
+            kind = "discount"
+        if kind == "markup":
+            mult = rng.choice([2, 3, 5, 8])
+            price = base * mult
+            tag = f"📈 Наценка ×{mult}"
+            stock = 3
+        elif kind == "discount":
+            pct = rng.choice([20, 30, 50])
+            price = base * (100 - pct) // 100
+            tag = f"🏷 Скидка −{pct}%"
+            stock = 2
+        elif kind == "mega":
+            price = base * 20 // 100
+            tag = "🔥 СКИДКА −80%"
+            stock = 1
+        else:
+            price = base
+            tag = "💠 Обычная цена"
+            stock = 3
+        offers.append({
+            "idx": len(offers),
+            "card": card,
+            "price": max(1, price),
+            "base": base,
+            "tag": tag,
+            "stock": stock,
+        })
+    return offers
+
+
+def shop_get_sold(slot):
+    cur.execute("SELECT idx, sold FROM shop_sales WHERE slot = ?", (slot,))
+    return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def shop_render(uid):
+    slot = shop_current_slot()
+    cur.execute("DELETE FROM shop_sales WHERE slot < ?", (slot - 4,))
+    db.commit()
+    offers = shop_build_offers(slot)
+    sold = shop_get_sold(slot)
+    _, _, _, _, hw, _ = get_user(uid)
+    left = shop_seconds_left()
+    lines = [
+        "🧛 Магазин Дракулы",
+        "",
+        f"⏳ Обновление через: {format_cooldown(left)}",
+        f"🍬 У тебя: {hw}",
+        "",
+    ]
+    buttons = []
+    for o in offers:
+        remaining = o["stock"] - sold.get(o["idx"], 0)
+        name = o["card"]["name"]
+        num = o["idx"] + 1
+        if o["price"] != o["base"]:
+            price_text = f"{o['price']} 🍬 (было {o['base']})"
+        else:
+            price_text = f"{o['price']} 🍬"
+        if remaining > 0:
+            lines.append(f"{num}. {name}\n{o['tag']} | {price_text} | ост. {remaining}")
+            buttons.append([InlineKeyboardButton(
+                text=f"{num}. {name} — {o['price']} 🍬",
+                callback_data=f"shop_buy_{slot}_{o['idx']}_{uid}"
+            )])
+        else:
+            lines.append(f"{num}. {name}\n❌ Раскуплено")
+    buttons.append([InlineKeyboardButton(text="🔄 Обновить", callback_data=f"shop_refresh_{uid}")])
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_back_{uid}")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def shop_show(call, uid):
+    text, kb = shop_render(uid)
+    try:
+        await call.message.edit_caption(caption=text, reply_markup=kb)
+    except Exception:
+        try:
+            await call.message.edit_text(text, reply_markup=kb)
+        except Exception:
+            pass
+
+
 # ==================== ОСНОВНЫЕ КОМАНДЫ ====================
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -410,6 +536,7 @@ async def start(message: types.Message):
         "/cards — просмотр карточек\n"
         "/casino — 🎰 Casino\n"
         "/halloween — 🎃 Хеллоуин\n"
+        "/daily — 🎁 ежедневные конфеты\n"
         "/mycards — инвентарь\n"
         "/balance — баланс\n"
         "/sell — продать карточку\n"
@@ -478,6 +605,30 @@ async def sell_card_callback(call: types.CallbackQuery):
 async def balance_cmd(message: types.Message):
     balance, _, _, _, hw, _ = get_user(message.from_user.id, message.from_user.username)
     await message.answer(f"💰 Обычных: {balance}\n🍬 Конфет: {hw}")
+
+
+@dp.message(Command("daily"))
+async def daily_cmd(message: types.Message):
+    uid = message.from_user.id
+    get_user(uid, message.from_user.username)
+    cur.execute("SELECT last_daily FROM users WHERE user_id = ?", (uid,))
+    row = cur.fetchone()
+    last = row[0] if row else None
+    if last:
+        elapsed = datetime.now() - datetime.fromisoformat(last)
+        if elapsed < timedelta(days=1):
+            secs = int((timedelta(days=1) - elapsed).total_seconds())
+            hours = secs // 3600
+            mins = (secs % 3600) // 60
+            await message.answer(f"⏳ Ты уже забрал награду.\nПриходи через: {hours} ч {mins} мин")
+            return
+    cur.execute(
+        "UPDATE users SET hw_balance = hw_balance + ?, last_daily = ? WHERE user_id = ?",
+        (DAILY_CANDY, datetime.now().isoformat(), uid)
+    )
+    db.commit()
+    _, _, _, _, hw, _ = get_user(uid)
+    await message.answer(f"🎁 Ежедневная награда: +{DAILY_CANDY} 🍬\n🍬 Теперь у тебя: {hw}\n\nСледующая через 24 часа.")
 
 
 @dp.message(Command("mycards"))
@@ -971,6 +1122,7 @@ def hw_menu_kb(uid):
         [InlineKeyboardButton(text="🎃 КЕЙСЫ", callback_data=f"hw_cases_{uid}")],
         [InlineKeyboardButton(text="🎃 Хеллоуин-Босс", callback_data=f"hw_boss_{uid}")],
         [InlineKeyboardButton(text="💱 Конвертация", callback_data=f"hw_conv_{uid}")],
+        [InlineKeyboardButton(text="🧛 Магазин Дракулы", callback_data=f"hw_shop_{uid}")],
         [InlineKeyboardButton(text="🔙 Закрыть", callback_data=f"hw_close_{uid}")],
     ])
 
@@ -1053,9 +1205,9 @@ async def hw_cases_menu(call: types.CallbackQuery):
     username = call.from_user.username or call.from_user.full_name or "Игрок"
     balance, _, _, _, hw, _ = get_user(uid)
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎃 Тыквенный кейс — 1000 🍬", callback_data=f"hw_case_pumpkin_{uid}")],
-        [InlineKeyboardButton(text="💀 Скелетный кейс — 10000 🍬", callback_data=f"hw_case_skeleton_{uid}")],
-        [InlineKeyboardButton(text="👻 Призрачный кейс — 100000 🍬", callback_data=f"hw_case_ghost_{uid}")],
+        [InlineKeyboardButton(text=f"🎃 Тыквенный кейс — {CASE_PRICES['pumpkin']} 🍬", callback_data=f"hw_case_pumpkin_{uid}")],
+        [InlineKeyboardButton(text=f"💀 Скелетный кейс — {CASE_PRICES['skeleton']} 🍬", callback_data=f"hw_case_skeleton_{uid}")],
+        [InlineKeyboardButton(text=f"👻 Призрачный кейс — {CASE_PRICES['ghost']} 🍬", callback_data=f"hw_case_ghost_{uid}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data=f"hw_back_{uid}")],
     ])
     text = f"🎃 *Кейсы Хеллоуина* — @{username}\n\n🍬 У тебя: {hw} конфет\n\n*Выбирай кейс:*"
@@ -1183,6 +1335,66 @@ async def hw_open_case(call: types.CallbackQuery):
                 reply_markup=kb, parse_mode="Markdown"
             )
     await call.answer("🎁 Кейс открыт!")
+
+
+# ==================== МАГАЗИН ДРАКУЛЫ ====================
+@dp.callback_query(F.data.startswith("hw_shop_"))
+async def hw_shop_open(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    get_user(uid, call.from_user.username)
+    await shop_show(call, uid)
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("shop_refresh_"))
+async def shop_refresh(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    await shop_show(call, uid)
+    await call.answer("🔄 Обновлено")
+
+
+@dp.callback_query(F.data.startswith("shop_buy_"))
+async def shop_buy(call: types.CallbackQuery):
+    parts = call.data.split("_")
+    slot = int(parts[2])
+    idx = int(parts[3])
+    uid = int(parts[4])
+    if call.from_user.id != uid:
+        await call.answer("Не твоё меню!", show_alert=True)
+        return
+    if slot != shop_current_slot():
+        await call.answer("🔄 Магазин обновился! Смотри новые товары.", show_alert=True)
+        await shop_show(call, uid)
+        return
+    offers = shop_build_offers(slot)
+    if idx < 0 or idx >= len(offers):
+        await call.answer("Ошибка товара.", show_alert=True)
+        return
+    offer = offers[idx]
+    sold = shop_get_sold(slot).get(idx, 0)
+    if sold >= offer["stock"]:
+        await call.answer("❌ Этот товар уже раскуплен!", show_alert=True)
+        await shop_show(call, uid)
+        return
+    _, _, _, _, hw, _ = get_user(uid, call.from_user.username)
+    price = offer["price"]
+    if hw < price:
+        await call.answer(f"❌ Не хватает конфет: нужно {price}, у тебя {hw}", show_alert=True)
+        return
+    name = offer["card"]["name"]
+    cur.execute("UPDATE users SET hw_balance = hw_balance - ? WHERE user_id = ?", (price, uid))
+    cur.execute("INSERT INTO inventory (user_id, card_name) VALUES (?, ?)", (uid, name))
+    cur.execute("INSERT OR IGNORE INTO shop_sales (slot, idx, sold) VALUES (?, ?, 0)", (slot, idx))
+    cur.execute("UPDATE shop_sales SET sold = sold + 1 WHERE slot = ? AND idx = ?", (slot, idx))
+    db.commit()
+    await call.answer(f"✅ Куплено: {name} за {price} 🍬", show_alert=True)
+    await shop_show(call, uid)
 
 
 # ==================== ХЕЛЛОУИН-БОСС ====================
