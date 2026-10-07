@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile, InputMediaPhoto
 from aiogram.filters import Command
 from PIL import Image, ImageDraw, ImageFont
 
@@ -443,8 +443,9 @@ video_file_ids = {}   # после первой отправки Telegram зап
 
 
 async def send_reveal(message, card_data, rarity_label, caption, reply_markup=None, parse_mode=None):
-    """Отправляет ОДНО сообщение: видео выпадения + подпись + кнопки.
-    Возвращает True, если получилось. Если видео не вышло — False (тогда шлём обычное фото)."""
+    """1) Отправляет видео с подписью (без кнопок).
+    2) Когда видео доиграло — то же сообщение превращается в картинку карты с кнопками.
+    Возвращает True, если видео отправилось. Если нет — False (тогда шлём обычное фото)."""
     if not USE_REVEAL_VIDEO:
         return False
     status = None
@@ -460,8 +461,7 @@ async def send_reveal(message, card_data, rarity_label, caption, reply_markup=No
                     )
         media = video_file_ids.get(path) or FSInputFile(path)
         sent = await message.answer_animation(
-            media, caption=caption, reply_markup=reply_markup,
-            parse_mode=parse_mode, width=VIDEO_W, height=VIDEO_H
+            media, caption=caption, parse_mode=parse_mode, width=VIDEO_W, height=VIDEO_H
         )
         if sent.animation:
             video_file_ids[path] = sent.animation.file_id
@@ -472,7 +472,7 @@ async def send_reveal(message, card_data, rarity_label, caption, reply_markup=No
                 await status.delete()
             except Exception:
                 pass
-        return True
+            status = None
     except Exception as e:
         print("Ошибка видео выпадения:", e)
         if status:
@@ -481,6 +481,26 @@ async def send_reveal(message, card_data, rarity_label, caption, reply_markup=No
             except Exception:
                 pass
         return False
+
+    # ждём, пока видео доиграет, и меняем его на картинку карты
+    await asyncio.sleep(VIDEO_SECONDS + 1.0)
+    try:
+        await sent.edit_media(
+            InputMediaPhoto(media=FSInputFile(card_data["file"]), caption=caption, parse_mode=parse_mode),
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        print("Не удалось заменить видео на картинку:", e)
+        try:
+            await sent.delete()
+        except Exception:
+            pass
+        try:
+            await message.answer_photo(FSInputFile(card_data["file"]), caption=caption,
+                                       reply_markup=reply_markup, parse_mode=parse_mode)
+        except Exception:
+            await message.answer(caption, reply_markup=reply_markup, parse_mode=parse_mode)
+    return True
 
 
 # ==================== МАГАЗИН ДРАКУЛЫ (логика) ====================
