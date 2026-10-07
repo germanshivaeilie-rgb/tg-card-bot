@@ -1,2 +1,4 @@
-aiogram==3.13.1
-Pillow==10.4.0
+aiogram>=3.0
+pillow>=10.1
+numpy
+imageio-ffmpeg
