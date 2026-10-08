@@ -1012,6 +1012,329 @@ def render_card_video(card_file, out_path, name, rarity_label, font_path=None):
     return out_path
 
 
+
+# =============================================================== ОБЩАЯ ЗАПИСЬ ВИДЕО
+def _write_video(out_path, W, H, fps, total, frame_fn):
+    tmp = out_path + ".tmp.mp4"
+    proc = subprocess.Popen(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error",
+         "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
+         "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+         "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-f", "mp4", tmp],
+        stdin=subprocess.PIPE)
+    try:
+        for fi in range(total):
+            proc.stdin.write(np.ascontiguousarray(frame_fn(fi)).tobytes())
+        proc.stdin.close()
+        if proc.wait() != 0:
+            raise RuntimeError("ffmpeg завершился с ошибкой")
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        raise
+    os.replace(tmp, out_path)
+    return out_path
+
+
+# =============================================================== COLOR DICE: падающие цвета
+DICE_W, DICE_H = 480, 560
+DICE_FPS = 20
+DICE_DROP_START = 0.55
+DICE_DROP_GAP = 0.72
+DICE_SECONDS = DICE_DROP_START + 3 * DICE_DROP_GAP + 0.95 + 1.0
+
+DICE_COLORS = {
+    "blue": (50, 115, 255), "red": (240, 50, 62), "yellow": (255, 207, 40),
+    "green": (50, 205, 95), "purple": (165, 85, 235), "orange": (255, 145, 30),
+}
+_DICE_ORDER = ["blue", "red", "yellow", "green", "purple", "orange"]
+_DX = [78, 186, 294, 402]          # центры слотов
+_WIN_Y = 106                        # центр окна раздатчика
+_Y_REST = 456                       # центр шара на дне
+_BALL_R = 34
+_GRAV = 2600.0
+_BALLS = {}
+
+
+def _ball_sprite(code, R):
+    key = (code, R)
+    if key in _BALLS:
+        return _BALLS[key]
+    base = np.array(DICE_COLORS[code], np.float32)
+    S = 2 * R + 4
+    ys, xs = np.mgrid[0:S, 0:S].astype(np.float32)
+    dx, dy = (xs - S / 2) / R, (ys - S / 2) / R
+    r2 = dx * dx + dy * dy
+    nz = np.sqrt(np.clip(1 - r2, 0, 1))
+    L = np.array([-.45, -.55, .7], np.float32)
+    L /= np.linalg.norm(L)
+    nl = dx * L[0] + dy * L[1] + nz * L[2]
+    diff = np.clip(nl, 0, 1)
+    spec = np.clip(2 * nl * nz - L[2], 0, 1) ** 28
+    col = base[None, None, :] * (.26 + .9 * diff)[..., None] + 255 * (spec * .85)[..., None]
+    col += 70 * ((1 - nz) ** 3)[..., None] * (base / 255)[None, None, :]
+    # блик-окошко
+    hl = np.exp(-(((dx + .38) / .22) ** 2 + ((dy + .42) / .13) ** 2)) * .55
+    col += 255 * hl[..., None]
+    alpha = np.clip((1 - np.sqrt(r2)) * R * .9, 0, 1)
+    arr = np.zeros((S, S, 4), np.uint8)
+    arr[..., :3] = np.clip(col, 0, 255).astype(np.uint8)
+    arr[..., 3] = (alpha * 255).astype(np.uint8)
+    im = Image.fromarray(arr, "RGBA")
+    _BALLS[key] = im
+    return im
+
+
+def _dice_static(font_path):
+    W, H = DICE_W, DICE_H
+    ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
+    d = np.clip(np.sqrt((xs - 240) ** 2 + (ys - 300) ** 2) / 420, 0, 1)[..., None]
+    arr = np.array((40, 24, 78), np.float32) * (1 - d) + np.array((6, 4, 16), np.float32) * d
+    # неоновая сетка внизу
+    grid = np.zeros((H, W), np.float32)
+    for gy in range(330, H, 22):
+        grid[gy:gy + 1, :] = .10
+    for gx in range(-240, W + 240, 40):
+        for yy in range(330, H):
+            xx = int(gx + (gx - 240) * (yy - 330) / 300)
+            if 0 <= xx < W:
+                grid[yy, xx] = .08
+    arr += grid[..., None] * np.array((180, 120, 255), np.float32)
+    img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
+    d = ImageDraw.Draw(img, "RGBA")
+
+    # рамка
+    d.rounded_rectangle((6, 6, W - 7, H - 7), radius=22, outline=(190, 130, 255, 200), width=2)
+    d.rounded_rectangle((12, 12, W - 13, H - 13), radius=18, outline=(190, 130, 255, 80), width=1)
+
+    # заголовок со свечением
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    f = _font(font_path, 34)
+    ImageDraw.Draw(glow).text((240, 38), "COLOR DICE", font=f, fill=(200, 140, 255, 255), anchor="mm")
+    img.paste(glow.filter(ImageFilter.GaussianBlur(8)).convert("RGB"), (0, 0),
+              glow.filter(ImageFilter.GaussianBlur(8)).getchannel("A"))
+    d.text((240, 38), "COLOR DICE", font=f, fill=(255, 255, 255, 255), anchor="mm",
+           stroke_width=2, stroke_fill=(60, 20, 110, 255))
+
+    # раздатчик
+    d.rounded_rectangle((24, 62, 456, 152), radius=22, fill=(30, 28, 50, 255), outline=(120, 120, 165, 255), width=3)
+    d.line((40, 68, 440, 68), fill=(255, 255, 255, 70), width=2)
+    for i, x in enumerate(_DX):
+        d.ellipse((x - 46, _WIN_Y - 46, x + 46, _WIN_Y + 46), fill=(8, 8, 16, 255), outline=(150, 150, 195, 255), width=3)
+        d.ellipse((x - 40, _WIN_Y - 40, x + 40, _WIN_Y + 40), outline=(60, 60, 90, 255), width=2)
+        d.polygon([(x - 20, 152), (x + 20, 152), (x + 12, 164), (x - 12, 164)], fill=(60, 60, 90, 255))
+
+    # задняя часть пробирок
+    for x in _DX:
+        d.rounded_rectangle((x - 48, 190, x + 48, 522), radius=26, fill=(8, 10, 24, 235),
+                            outline=(110, 90, 160, 255), width=2)
+        for k in range(9):
+            yy = 210 + k * 36
+            d.line((x - 40, yy, x - 30, yy), fill=(160, 130, 220, 90), width=1)
+    # номера
+    fn = _font(font_path, 22)
+    for i, x in enumerate(_DX):
+        d.ellipse((x - 17, 528, x + 17, 560 - 2), fill=(30, 20, 60, 255), outline=(190, 130, 255, 255), width=2)
+        d.text((x, 544), str(i + 1), font=fn, fill=(255, 255, 255, 255), anchor="mm")
+    return img.convert("RGBA")
+
+
+def _dice_glass():
+    W, H = DICE_W, DICE_H
+    g = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(g)
+    for x in _DX:
+        d.rounded_rectangle((x - 48, 190, x + 48, 522), radius=26, outline=(230, 220, 255, 150), width=3)
+        d.rounded_rectangle((x - 40, 200, x - 32, 500), radius=4, fill=(255, 255, 255, 38))
+        d.rounded_rectangle((x + 30, 214, x + 35, 440), radius=2, fill=(255, 255, 255, 22))
+        d.ellipse((x - 44, 514, x + 44, 526), fill=(255, 255, 255, 30))
+    return g
+
+
+def _simulate_ball(release, total):
+    ys = [None] * total
+    impacts = []
+    y, v, t_cur, rest = float(_WIN_Y), 0.0, release, False
+    dt = 1.0 / (DICE_FPS * 10)
+    for fi in range(total):
+        tf = fi / DICE_FPS
+        if tf < release:
+            continue
+        while t_cur < tf:
+            t_cur += dt
+            if rest:
+                continue
+            v += _GRAV * dt
+            y += v * dt
+            if y >= _Y_REST:
+                y = float(_Y_REST)
+                if v > 150:
+                    impacts.append(t_cur)
+                v = -v * .36
+                if abs(v) < 60:
+                    v, rest = 0.0, True
+        ys[fi] = y
+    return ys, impacts
+
+
+def render_dice_video(result_codes, out_path, font_path=None):
+    """result_codes — 4 кода цветов ('blue', 'red', ...) в порядке падения."""
+    W, H = DICE_W, DICE_H
+    total = int(DICE_SECONDS * DICE_FPS)
+    bg = _dice_static(font_path)
+    glass = _dice_glass()
+    rnd = random.Random(sum(ord(ch) for ch in "".join(result_codes)))
+
+    balls = []
+    for i, code in enumerate(result_codes):
+        release = DICE_DROP_START + i * DICE_DROP_GAP
+        ys, imp = _simulate_ball(release, total)
+        sparks = [(rnd.uniform(-1, 1), rnd.uniform(160, 380), rnd.uniform(.3, .7)) for _ in range(12)]
+        balls.append(dict(code=code, rel=release, ys=ys, imp=imp[0] if imp else None, sparks=sparks,
+                          seq=[rnd.randrange(6) for _ in range(40)]))
+
+    def frame(fi):
+        tf = fi / DICE_FPS
+        base = bg.copy()
+        ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        od = ImageDraw.Draw(ov)
+        for i, b in enumerate(balls):
+            x = _DX[i]
+            col = DICE_COLORS[b["code"]]
+            R = _BALL_R
+            # --- окно раздатчика: перебор цветов до броска
+            if tf < b["rel"]:
+                if tf > .05:
+                    left = b["rel"] - tf
+                    interval = 2 if left > 0.6 else (3 if left > 0.3 else 4)
+                    idx = (fi // interval + i * 2) % 6
+                    code = _DICE_ORDER[idx] if left > 0.18 else b["code"]
+                else:
+                    code = _DICE_ORDER[i % 6]
+                c0 = DICE_COLORS[code]
+                _comp(ov, _spr(58, c0, .55, 1.6), x - 58, _WIN_Y - 58)
+                spr = _ball_sprite(code, R)
+                _comp(ov, spr, x - spr.width // 2, _WIN_Y - spr.height // 2)
+            else:
+                # окно горит цветом выпавшего шара
+                od.ellipse((x - 44, _WIN_Y - 44, x + 44, _WIN_Y + 44), outline=tuple(col) + (200,), width=4)
+                _comp(ov, _spr(54, col, .35, 1.8), x - 54, _WIN_Y - 54)
+                y = b["ys"][fi]
+                prev = b["ys"][fi - 1] if fi > 0 and b["ys"][fi - 1] is not None else y
+                # шлейф
+                if y - prev > 25:
+                    for k in range(1, 5):
+                        _comp(ov, _spr(26, col, .5 * (1 - k / 5), 1.4), x - 26, y - k * 16 - 26)
+                sx_, sy_ = 1.0, 1.0
+                if b["imp"] is not None and 0 <= tf - b["imp"] < .1:
+                    k = 1 - (tf - b["imp"]) / .1
+                    sx_, sy_ = 1 + .14 * k, 1 - .2 * k
+                spr = _ball_sprite(b["code"], R)
+                if sx_ != 1.0:
+                    spr = spr.resize((int(spr.width * sx_), int(spr.height * sy_)), Image.BILINEAR)
+                bottom_shift = (R * (1 - sy_)) if sy_ != 1.0 else 0
+                _comp(ov, spr, x - spr.width // 2, y - spr.height // 2 + bottom_shift)
+
+            # --- эффекты приземления
+            if b["imp"] is not None and tf >= b["imp"]:
+                dt = tf - b["imp"]
+                gl = _clamp(dt / .15) * (.5 + .15 * math.sin(tf * 6 + i))
+                _comp(ov, _spr(78, col, gl, 1.5), x - 78, 450 - 78)
+                if dt < .4:
+                    k = dt / .4
+                    r = 26 + 70 * _ease_out(k)
+                    od.ellipse((x - r, 506 - r * .28, x + r, 506 + r * .28),
+                               outline=tuple(_mix(col, WHITE, .4)) + (int(230 * (1 - k)),), width=3)
+                for (ax, v0, life) in b["sparks"]:
+                    if dt < life:
+                        px = x + ax * 52 * (dt / life) ** .7 * 1.6
+                        py = 500 - v0 * dt + 520 * dt * dt
+                        od.ellipse((px - 2.5, py - 2.5, px + 2.5, py + 2.5),
+                                   fill=tuple(_mix(col, WHITE, .5)) + (int(255 * (1 - dt / life)),))
+        base.alpha_composite(ov)
+        base.alpha_composite(glass)
+        # финальные блики после всех приземлений
+        end = DICE_DROP_START + 3 * DICE_DROP_GAP + .85
+        if tf > end:
+            k = _ease((tf - end) / .4)
+            for i, x in enumerate(_DX):
+                col = DICE_COLORS[balls[i]["code"]]
+                r = 46 + 4 * math.sin(tf * 7 + i)
+                fd = ImageDraw.Draw(base)
+                _comp(base, _spr(60, col, .25 * k, 1.8), x - 60, 440 - 60)
+        f = .4 + .6 * _ease(tf / .25)
+        out = np.asarray(base.convert("RGB"))
+        if f < .995:
+            out = (out.astype(np.float32) * f).astype(np.uint8)
+        return out
+
+    return _write_video(out_path, W, H, DICE_FPS, total, frame), (W, H)
+
+
+# =============================================================== БОСС: плавные переходы
+BOSS_CLIP_SECONDS = 1.4
+BOSS_FPS = 20
+
+
+def boss_clip_size(path):
+    im = Image.open(path)
+    w, h = im.size
+    s = 640.0 / max(w, h)
+    return max(2, int(w * s) // 2 * 2), max(2, int(h * s) // 2 * 2)
+
+
+def render_boss_transition(img_normal, img_other, out_path, kind="hurt"):
+    """Плавный кроссфейд обычного кадра босса в другой (hurt/attack) и обратно.
+    Первый и последний кадры = обычная картинка, поэтому стык с фото незаметен."""
+    W, H = boss_clip_size(img_normal)
+    a = Image.open(img_normal).convert("RGB").resize((W, H), Image.LANCZOS)
+    b = Image.open(img_other).convert("RGB").resize((W, H), Image.LANCZOS)
+    red = Image.new("RGB", (W, H), (255, 30, 30))
+    white = Image.new("RGB", (W, H), (255, 255, 255))
+    total = int(BOSS_CLIP_SECONDS * BOSS_FPS)
+
+    def weight(t):
+        if t < .22:
+            return _ease(t / .22)
+        if t < .55:
+            return 1.0
+        return 1 - _ease((t - .55) / .45)
+
+    def frame(fi):
+        t = fi / (total - 1)
+        w = weight(t)
+        img = Image.blend(a, b, w)
+        zoom, sx, sy = 1.0, 0.0, 0.0
+        if kind == "hurt":
+            env = max(0.0, 1 - abs(t - .3) / .3)
+            fl = max(0.0, 1 - abs(t - .22) / .12) * .5 + .14 * w * (1 - _ease((t - .55) / .45) if t > .55 else 1)
+            img = Image.blend(img, red, min(.6, fl))
+            sx, sy = math.sin(t * 70) * 12 * env, math.cos(t * 55) * 8 * env
+            zoom = 1 + .05 * max(0.0, 1 - abs(t - .22) / .22)
+        else:
+            if t < .22:
+                zw = _ease(t / .22)
+            elif t < .45:
+                zw = 1.0
+            else:
+                zw = 1 - _ease((t - .45) / .4)
+            zoom = 1 + .14 * zw
+            env = max(0.0, 1 - abs(t - .24) / .2)
+            img = Image.blend(img, white, max(0.0, 1 - abs(t - .22) / .06) * .4)
+            sx, sy = math.sin(t * 80) * 9 * env, math.cos(t * 60) * 6 * env
+        if zoom != 1.0 or sx or sy:
+            cw, ch = W / zoom, H / zoom
+            cx = min(max(W / 2 + sx, cw / 2), W - cw / 2)
+            cy = min(max(H / 2 + sy, ch / 2), H - ch / 2)
+            img = img.resize((W, H), Image.BILINEAR, box=(cx - cw / 2, cy - ch / 2, cx + cw / 2, cy + ch / 2))
+        return np.asarray(img)
+
+    _write_video(out_path, W, H, BOSS_FPS, total, frame)
+    return W, H
+
+
 if __name__ == "__main__":
     import sys
     f = sys.argv[1] if len(sys.argv) > 1 else "test.png"
