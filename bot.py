@@ -7,12 +7,12 @@ from aiogram.filters import Command
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-DEV_ID = 1473258682
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
 ACTION_COMMANDS = {
+    # Старые
     "выпить":            "🍺 Выпил с {user}",
     "заморозить":        "❄️ Заморозил {user}",
     "трахнуть":          "😏 Трахнул {user}",
@@ -27,6 +27,24 @@ ACTION_COMMANDS = {
     "нарисовать":        "🎨 Нарисовал {user}",
     "обмануть":          "🎭 Обманул {user}",
     "взломать":          "💻 Взломал {user}",
+    # Новые
+    "дать наркоты":      "💊 Дал наркоты {user}",
+    "покурить":          "🚬 Покурил с {user}",
+    "оплодотворить":     "🧬 Оплодотворил {user}",
+    "осеменить":         "🌱 Осеменил {user}",
+    "напоить":           "🍷 Напоил {user}",
+    "убить":             "🔪 Убил {user}",
+    "задушить":          "🤏 Задушил {user}",
+    "застрелить":        "🔫 Застрелил {user}",
+    "простить":          "🕊 Простил {user}",
+    "отомстить":         "😈 Отомстил {user}",
+    "перепрыгнуть":      "🦘 Перепрыгнул {user}",
+    "жмякнуть":          "👆 Жмякнул {user}",
+    "потрогать":         "🤚 Потрогал {user}",
+    "изнасиловать":      "💀 Изнасиловал {user}",
+    "извиниться":        "🙏 Извинился перед {user}",
+    "нокаутировать":     "💫 Нокаутировал {user}",
+    "ударить":           "👊 Ударил {user}",
 }
 
 
@@ -34,29 +52,27 @@ ACTION_COMMANDS = {
 async def start(message: types.Message):
     await message.answer(
         "👋 Бот активен.\n\n"
-        "Команды-действия:\n"
-        "• Выпить\n• Заморозить\n• Трахнуть\n• Кончить\n"
-        "• Принять участие\n• Убиться\n• Брызнуть\n• Набухаться\n"
-        "• Разрубить\n• Отсексафонить\n• Напердеть\n• Нарисовать\n"
-        "• Обмануть\n• Взломать\n\n"
-        "Как использовать:\n"
-        "• Ответь (реплаем) на сообщение человека и напиши команду\n"
-        "• Или напиши команду и @username\n"
-        "• Или просто команду — сделаешь сам с собой"
+        "Команды-действия (работают для всех):\n"
+        "Напиши реплаем на сообщение или @username.\n\n"
+        "Например:\n"
+        "• Выпить @username\n"
+        "• Реплай + Ударить"
     )
 
 
-@dp.message(F.text.regexp(r"(?i)^(выпить|заморозить|трахнуть|кончить|принять участие|убиться|брызнуть|набухаться|разрубить|отсексафонить|напердеть|нарисовать|обмануть|взломать)(\s|$)"))
+@dp.message(F.text)
 async def action_command(message: types.Message):
-    if message.from_user.id != DEV_ID:
+    text = message.text.strip()
+    if not text:
+        return
+    if text.startswith("/"):
         return
 
-    text = message.text.strip()
     low = text.lower()
 
     matched = None
     for cmd in ACTION_COMMANDS:
-        if low.startswith(cmd):
+        if low == cmd or low.startswith(cmd + " ") or low.startswith(cmd + "@"):
             matched = cmd
             break
     if not matched:
@@ -67,7 +83,9 @@ async def action_command(message: types.Message):
     # 1) Реплай на сообщение
     if message.reply_to_message:
         target_user = message.reply_to_message.from_user
-        if target_user.username:
+        if target_user.id == message.from_user.id:
+            target_mention = "сам с собой"
+        elif target_user.username:
             target_mention = f"@{target_user.username}"
         else:
             target_mention = target_user.full_name
