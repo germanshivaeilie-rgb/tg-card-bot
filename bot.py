@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import io
+import logging
 import os
 import random
 import sqlite3
@@ -11,6 +12,8 @@ from aiogram.types import (FSInputFile, InlineKeyboardMarkup, InlineKeyboardButt
                            InputMediaPhoto, InputMediaAnimation)
 from aiogram.filters import Command
 from PIL import Image, ImageDraw, ImageFont
+
+logging.basicConfig(level=logging.INFO)
 
 try:
     from card_video import render_card_video, VIDEO_W, VIDEO_H, VIDEO_SECONDS
@@ -706,7 +709,11 @@ async def start(message: types.Message):
         "/upgrade — улучшение\n"
         "/profile — профиль\n"
         "/top — топ-3\n"
-        "/cancel — отмена действия"
+        "/cancel — отмена действия\n\n"
+        "🎭 Команды-действия (без /):\n"
+        "Выпить, Заморозить, Трахнуть, Кончить, Принять участие, Убиться, Брызнуть, "
+        "Набухаться, Разрубить, Отсексафонить, Напердеть, Нарисовать, Обмануть, Взломать\n"
+        "Ответь реплаем на человека, напиши команду и @username, либо просто команду."
     )
 
 
@@ -2854,6 +2861,78 @@ async def handle_number(message: types.Message):
         ])
         await safe_edit(msg, text, reply_markup=kb, parse_mode="Markdown")
         return
+
+
+# ==================== КОМАНДЫ-ДЕЙСТВИЯ ====================
+# True — команды работают только у DEV_ID (как в твоём коде), False — у всех игроков
+ACTIONS_DEV_ONLY = True
+
+ACTION_COMMANDS = {
+    "выпить":            "🍺 Выпил с {user}",
+    "заморозить":        "❄️ Заморозил {user}",
+    "трахнуть":          "😏 Трахнул {user}",
+    "кончить":           "💦 Кончил на {user}",
+    "принять участие":   "🫂 Принял участие с {user}",
+    "убиться":           "💀 Убил {user}",
+    "брызнуть":          "💧 Брызнул на {user}",
+    "набухаться":        "🍻 Набухался с {user}",
+    "разрубить":         "🪓 Разрубил {user}",
+    "отсексафонить":     "🎷 Отсексафонил {user}",
+    "напердеть":         "💨 Напердел на {user}",
+    "нарисовать":        "🎨 Нарисовал {user}",
+    "обмануть":          "🎭 Обманул {user}",
+    "взломать":          "💻 Взломал {user}",
+}
+
+ACTION_REGEX = r"(?i)^(" + "|".join(ACTION_COMMANDS.keys()) + r")(\s|$)"
+
+
+def user_has_pending_input(uid):
+    """Если игрок сейчас вводит поиск/ставку — команды-действия не трогаем."""
+    for d in (color_games, miner_games, coin_games, wheel_games, rad_convert_games):
+        if uid in d:
+            return True
+    g = cards_view_games.get(uid)
+    if g and g.get("state") == "wait_search":
+        return True
+    g = trade_games.get(uid)
+    if g and g.get("state") == "wait_search_my":
+        return True
+    return False
+
+
+@dp.message(F.text.regexp(ACTION_REGEX))
+async def action_command(message: types.Message):
+    uid = message.from_user.id
+    if ACTIONS_DEV_ONLY and uid != DEV_ID:
+        return
+    if user_has_pending_input(uid):
+        return
+
+    text = message.text.strip()
+    low = text.lower()
+    matched = next((cmd for cmd in ACTION_COMMANDS if low.startswith(cmd)), None)
+    if not matched:
+        return
+
+    target_mention = None
+
+    # 1) Реплай на сообщение
+    if message.reply_to_message and message.reply_to_message.from_user:
+        target_user = message.reply_to_message.from_user
+        target_mention = f"@{target_user.username}" if target_user.username else target_user.full_name
+
+    # 2) @username в тексте
+    if not target_mention:
+        rest = text[len(matched):].strip()
+        if rest.startswith("@") and len(rest) > 1:
+            target_mention = "@" + rest.split()[0].lstrip("@")
+
+    # 3) Ничего не указано — сам с собой
+    if not target_mention:
+        target_mention = "сам с собой"
+
+    await message.reply(ACTION_COMMANDS[matched].format(user=target_mention))
 
 
 @dp.message(F.text)
