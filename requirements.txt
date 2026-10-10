@@ -2,3 +2,4 @@ aiogram>=3.0
 pillow>=10.1
 numpy
 imageio-ffmpeg
+aiogram>=3.7,<4
