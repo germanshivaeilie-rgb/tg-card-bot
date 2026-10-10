@@ -8,6 +8,8 @@
   RAILWAY_VOLUME_MOUNT_PATH — (необязательно) папка для базы и кэша видео
 
 Порядок роутеров важен: мафия -> карточки -> RP (RP ловит любой текст, поэтому он последний).
+
+ВАЖНО: для режима тишины в мафии боту нужны права админа в группе (удаление сообщений).
 """
 import asyncio
 import hashlib
@@ -22,7 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
-from aiogram import Bot, Dispatcher, F, Router, types
+from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ChatMemberStatus, ChatType, ParseMode
 from aiogram.exceptions import TelegramAPIError
@@ -70,8 +72,8 @@ NIGHT_SECONDS = int(os.getenv("NIGHT_SECONDS", "60"))
 DAY_SECONDS = int(os.getenv("DAY_SECONDS", "90"))
 VOTE_SECONDS = int(os.getenv("VOTE_SECONDS", "45"))
 REVEAL_ROLES = True          # показывать роль погибшего/казнённого
-DON_LOOKS_PEACEFUL = True    # комиссар видит Дона как мирного
 ACTIONS_DURING_GAME = False  # False = RP-команды молчат, пока в чате идёт мафия
+DEAD_CAN_CHAT = False        # True = мёртвые игроки тоже могут писать днём
 
 # ── RP
 ACTIONS_DEV_ONLY = False     # True — RP-команды работают только у DEV_ID
@@ -147,12 +149,12 @@ ROLE_TITLE = {
 
 ROLE_DESC = {
     DON: "Тебе решать, кто не проснётся этой ночью...\n\n"
-         "Каждую ночь мафия голосует, кого убить. При равенстве голосов решает твой выбор. "
-         "Комиссар видит тебя мирным жителем.",
+         "Каждую ночь мафия голосует, кого убить. При равенстве голосов решает твой выбор.",
     MAFIA: "Каждую ночь вместе с Доном выбираешь жертву. "
            "Ночью можешь писать союзникам прямо сюда — бот перешлёт им твои сообщения.",
-    COMMISSAR: "Каждую ночь проверяешь одного игрока и узнаёшь, мафия он или нет. "
-               "(Дон выглядит мирным.)",
+    COMMISSAR: "Каждую ночь выбираешь одно действие:\n"
+               "🔍 Проверить — узнать, мафия игрок или нет.\n"
+               "🔫 Застрелить — убить подозреваемого (рискованно: можно убить мирного).",
     DOCTOR: "Каждую ночь лечишь одного игрока. Если мафия выберет его — он выживет. "
             "Нельзя лечить одного и того же два раза подряд, себя — один раз за игру.",
     CIVILIAN: "Ночью ты спишь. Днём обсуждай, ищи мафию и голосуй.",
@@ -170,7 +172,8 @@ ROLE_ACTION = {DON: "kill", MAFIA: "kill", COMMISSAR: "check", DOCTOR: "heal", A
 
 KIND_PROMPT = {
     "kill": "🔪 Кого убьём этой ночью?",
-    "check": "🕵️ Кого проверим этой ночью?",
+    "check": "🔍 Кого проверим этой ночью?",
+    "shoot": "🔫 Кого застрелим этой ночью?",
     "heal": "💉 Кого вылечим этой ночью?",
     "drink": "🍺 Кого уведёшь домой выпивать?",
 }
@@ -178,6 +181,7 @@ KIND_PROMPT = {
 ANNOUNCE = {
     "kill": "🔪 Мафия сделала свой выбор...",
     "check": "🕵️ Комиссар отправился на поиски мафии...",
+    "shoot": "🔫 Комиссар достал оружие...",
     "heal": "💉 Доктор поспешил кому-то на помощь...",
     "drink": "🍺 Алкаш утащил кого-то домой выпивать...",
 }
@@ -185,6 +189,7 @@ ANNOUNCE = {
 FAKE_LABEL = {
     "kill": "🔪 Убить (как мафия)",
     "check": "🕵️ Проверить (как комиссар)",
+    "shoot": "🔫 Застрелить (как комиссар)",
     "heal": "💉 Вылечить (как доктор)",
     "drink": "🍺 Увести бухать (как алкаш)",
 }
@@ -192,8 +197,8 @@ FAKE_LABEL = {
 RULES_TEXT = (
     "📖 <b>Правила</b>\n\n"
     "Город делится на мирных и мафию. Игра идёт кругами: ночь → день → голосование.\n\n"
-    "🌙 <b>Ночью</b> роли получают меню в личке бота и делают ход.\n"
-    "☀️ <b>Днём</b> все обсуждают, кто мафия.\n"
+    "🌙 <b>Ночью</b> роли получают меню в личке бота и делают ход. В группе писать нельзя — сообщения удаляются.\n"
+    "☀️ <b>Днём</b> обсуждают, кто мафия. Писать в группу могут только игроки.\n"
     "⚖️ <b>Голосование</b> — кого казнить (кнопки в группе).\n\n"
     "<b>Роли:</b>\n"
     + "\n\n".join(f"{ROLE_TITLE[r]}\n{ROLE_DESC[r]}" for r in
@@ -234,6 +239,7 @@ class Game:
         self.mafia_votes: dict[int, int] = {}
         self.doctor_target: Optional[int] = None
         self.commissar_target: Optional[int] = None
+        self.shoot_target: Optional[int] = None
         self.drunk_target: Optional[int] = None
         self.acted: set[int] = set()
         self.announced: set[str] = set()
@@ -316,6 +322,29 @@ async def is_manager(g: Game, uid: int) -> bool:
 
 def alive_list_text(g: Game) -> str:
     return "\n".join(f"• {p.mention}" for p in g.alive())
+
+
+# ───────────────────────── МАФИЯ: ТИШИНА В ГРУППЕ ─────────────────────────
+class GroupGuard(BaseMiddleware):
+    """Ночью в группе писать никому нельзя; днём и на голосовании — только игрокам.
+    Лишние сообщения бот удаляет (нужны права админа). Команды (/...) пропускаются."""
+
+    async def __call__(self, handler, event: Message, data):
+        if (event.chat.type in GROUP_TYPES and event.from_user
+                and not event.from_user.is_bot):
+            g = games.get(event.chat.id)
+            if g and g.state in ("starting", "night", "resolving", "day", "vote"):
+                if not (event.text or "").startswith("/"):
+                    p = g.players.get(event.from_user.id)
+                    allowed = (g.state in ("starting", "day", "vote") and p is not None
+                               and (p.alive or DEAD_CAN_CHAT))
+                    if not allowed:
+                        try:
+                            await event.delete()
+                        except TelegramAPIError:
+                            pass
+                        return
+        return await handler(event, data)
 
 
 # ───────────────────────── МАФИЯ: ЛОББИ ─────────────────────────
@@ -585,20 +614,21 @@ def night_targets(g: Game, p: Player, kind: str) -> list[Player]:
     if kind == "heal":
         return [q for q in alive
                 if q.user_id != p.last_heal and not (q.user_id == p.user_id and p.self_healed)]
-    return [q for q in alive if q.user_id != p.user_id]  # check / drink
+    return [q for q in alive if q.user_id != p.user_id]  # check / shoot / drink
 
 
 def skip_row(g: Game):
     return InlineKeyboardButton(text="😴 Пропустить", callback_data=f"skip:{g.chat_id}")
 
 
-def targets_kb(g: Game, prefix: str, targets: list[Player], back: bool = False):
+def targets_kb(g: Game, prefix: str, targets: list[Player], back: bool = False,
+               back_cb: Optional[str] = None):
     b = InlineKeyboardBuilder()
     for t in targets:
         b.button(text=t.name[:30], callback_data=f"{prefix}:{t.user_id}")
     b.adjust(2)
     if back:
-        b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"fkb:{g.chat_id}"))
+        b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_cb or f"fkb:{g.chat_id}"))
     b.row(skip_row(g))
     if g.chat_link:
         b.row(InlineKeyboardButton(text="Перейти в группу", url=g.chat_link))
@@ -607,7 +637,7 @@ def targets_kb(g: Game, prefix: str, targets: list[Player], back: bool = False):
 
 def deceiver_menu_kb(g: Game):
     b = InlineKeyboardBuilder()
-    for kind in ("kill", "check", "heal", "drink"):
+    for kind in ("kill", "check", "shoot", "heal", "drink"):
         b.row(InlineKeyboardButton(text=FAKE_LABEL[kind], callback_data=f"fk:{g.chat_id}:{kind}"))
     b.row(skip_row(g))
     if g.chat_link:
@@ -621,9 +651,26 @@ def deceiver_menu_text(g: Game) -> str:
             f"Можно одно действие за ночь.")
 
 
+def commissar_menu_kb(g: Game):
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="🔍 Проверить роль", callback_data=f"cmk:{g.chat_id}:check"))
+    b.row(InlineKeyboardButton(text="🔫 Застрелить", callback_data=f"cmk:{g.chat_id}:shoot"))
+    b.row(skip_row(g))
+    if g.chat_link:
+        b.row(InlineKeyboardButton(text="Перейти в группу", url=g.chat_link))
+    return b.as_markup()
+
+
+def commissar_menu_text(g: Game) -> str:
+    return f"🌙 <b>Ночь {g.day}</b>\n🕵️ Что делаешь этой ночью? (одно действие)"
+
+
 async def send_night_menu(g: Game, p: Player):
     if p.role == DECEIVER:
         await send(p.user_id, deceiver_menu_text(g), reply_markup=deceiver_menu_kb(g))
+        return
+    if p.role == COMMISSAR:
+        await send(p.user_id, commissar_menu_text(g), reply_markup=commissar_menu_kb(g))
         return
     kind = ROLE_ACTION.get(p.role)
     if not kind:
@@ -645,13 +692,15 @@ def all_acted(g: Game) -> bool:
 async def night_phase(g: Game):
     g.state = "night"
     g.mafia_votes = {}
-    g.doctor_target = g.commissar_target = g.drunk_target = None
+    g.doctor_target = g.commissar_target = g.drunk_target = g.shoot_target = None
     g.acted = set()
     g.announced = set()
     g.night_event = asyncio.Event()
 
     await send(g.chat_id,
-               f"🌙 <b>Ночь {g.day}</b>\n\nГород засыпает, просыпается мафия...\n"
+               f"🌙 <b>Ночь {g.day} наступила</b>\n\n"
+               f"Город засыпает, просыпается мафия...\n"
+               f"🤫 <b>Писать в чат нельзя</b> — сообщения удаляются.\n"
                f"У ролей {NIGHT_SECONDS} сек. на ход — меню в личке бота.",
                reply_markup=go_bot_kb())
     for p in g.alive():
@@ -707,7 +756,11 @@ async def cb_act(cb: CallbackQuery):
     if not g:
         await cb.answer("Это действие уже недоступно", show_alert=True)
         return
-    if ROLE_ACTION.get(p.role) != kind:
+    if p.role == COMMISSAR:
+        allowed = kind in ("check", "shoot")
+    else:
+        allowed = ROLE_ACTION.get(p.role) == kind
+    if not allowed:
         await cb.answer("Это не твоё действие", show_alert=True)
         return
     if p.user_id in g.acted:
@@ -727,9 +780,11 @@ async def cb_act(cb: CallbackQuery):
         await to_killers(g, f"{p.mention} выбрал(а) {t.mention}", exclude=p.user_id)
     elif kind == "check":
         g.commissar_target = tid
-        mafia_like = t.role in MAFIA_TEAM and not (t.role == DON and DON_LOOKS_PEACEFUL)
-        verdict = "🔴 <b>МАФИЯ</b>" if mafia_like else "🟢 <b>не мафия</b>"
+        mafia_like = t.role in MAFIA_TEAM
+        verdict = "🔴 <b>МАФИЯ</b>" if mafia_like else "🟢 <b>Мирный житель</b>"
         await send(p.user_id, f"🕵️ Результат проверки: {t.mention} — {verdict}")
+    elif kind == "shoot":
+        g.shoot_target = tid
     elif kind == "heal":
         g.doctor_target = tid
         p.last_heal = tid
@@ -742,6 +797,34 @@ async def cb_act(cb: CallbackQuery):
     await announce_action(g, kind)
     if all_acted(g):
         g.night_event.set()
+
+
+@router.callback_query(F.data.startswith("cmk:"))
+async def cb_commissar_kind(cb: CallbackQuery):
+    try:
+        _, chat, kind = cb.data.split(":")
+        chat_id = int(chat)
+    except ValueError:
+        await cb.answer()
+        return
+    g, p = night_ctx(cb, chat_id)
+    if not g or p.role != COMMISSAR or p.user_id in g.acted or kind not in ("check", "shoot"):
+        await cb.answer("Это действие уже недоступно", show_alert=True)
+        return
+    await cb.answer()
+    await edit_cb(cb, KIND_PROMPT[kind],
+                  targets_kb(g, f"act:{g.chat_id}:{kind}", night_targets(g, p, kind),
+                             back=True, back_cb=f"cmb:{g.chat_id}"))
+
+
+@router.callback_query(F.data.startswith("cmb:"))
+async def cb_commissar_back(cb: CallbackQuery):
+    g, p = night_ctx(cb, int(cb.data.split(":")[1]))
+    if not g or p.role != COMMISSAR or p.user_id in g.acted:
+        await cb.answer("Это действие уже недоступно", show_alert=True)
+        return
+    await cb.answer()
+    await edit_cb(cb, commissar_menu_text(g), commissar_menu_kb(g))
 
 
 @router.callback_query(F.data.startswith("fk:"))
@@ -845,7 +928,7 @@ def pick_mafia_target(g: Game) -> Optional[int]:
 
 async def resolve_night(g: Game):
     target_id = pick_mafia_target(g)
-    killed: Optional[Player] = None
+    killed: list[tuple[Player, str]] = []
 
     if target_id is None:
         await to_killers(g, "Голосование мафии завершено\nМафия никого не выбрала.")
@@ -860,14 +943,39 @@ async def resolve_night(g: Game):
                 await send(doc.user_id, f"💉 Ты спас жизнь: {t.mention}!")
             await send(t.user_id, "💉 Этой ночью на тебя напали, но доктор успел тебя спасти!")
         else:
-            killed = t
             t.alive = False
+            killed.append((t, "mafia"))
             await send(t.user_id, "💀 Этой ночью тебя убила мафия. Ты выбыл из игры.")
+
+    # выстрел комиссара
+    sid = g.shoot_target
+    if sid is not None:
+        s = g.players[sid]
+        com = next((p for p in g.players.values() if p.role == COMMISSAR), None)
+        if s.alive:
+            if g.drunk_target == sid:
+                if com:
+                    await send(com.user_id, f"🔫 Ты пришёл за {s.mention}, но дома его не оказалось.")
+            elif g.doctor_target == sid:
+                doc = next((p for p in g.alive() if p.role == DOCTOR), None)
+                if doc:
+                    await send(doc.user_id, f"💉 Ты спас жизнь: {s.mention}!")
+                await send(s.user_id, "💉 Этой ночью в тебя стреляли, но доктор успел тебя спасти!")
+                if com:
+                    await send(com.user_id, f"🔫 Выстрел в {s.mention} не убил — его спасли.")
+            else:
+                s.alive = False
+                killed.append((s, "shot"))
+                await send(s.user_id, "💀 Этой ночью тебя застрелил комиссар. Ты выбыл из игры.")
+                if com:
+                    await send(com.user_id, f"🔫 Ты застрелил {s.mention} — {ROLE_TITLE[s.role]}.")
 
     text = f"☀️ <b>Наступило утро. День {g.day}</b>\n\n"
     if killed:
-        text += f"Этой ночью был убит(а) {killed.mention}"
-        text += f" — {ROLE_TITLE[killed.role]}.\n" if REVEAL_ROLES else ".\n"
+        for p, cause in killed:
+            how = "убит(а) мафией" if cause == "mafia" else "застрелен(а) комиссаром"
+            text += f"Этой ночью {how}: {p.mention}"
+            text += f" — {ROLE_TITLE[p.role]}.\n" if REVEAL_ROLES else ".\n"
     else:
         text += "Этой ночью никто не погиб. 🙏\n"
     text += f"\n👥 <b>Живые ({len(g.alive())}):</b>\n{alive_list_text(g)}"
@@ -4041,6 +4149,8 @@ async def main():
     log.info("Бот @%s запущен", BOT_USERNAME)
 
     dp = Dispatcher()
+    # тишина в группе во время мафии (ночью — никто, днём — только игроки)
+    dp.message.outer_middleware(GroupGuard())
     # порядок важен: мафия -> карточки -> RP (RP ловит любой текст, поэтому последний)
     dp.include_router(router)
     dp.include_router(cr)
